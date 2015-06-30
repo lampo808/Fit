@@ -1,0 +1,690 @@
+classdef Fit < handle
+    % Fit: generic class for contrained fitting using fmincon()
+    % v. 0.1
+    %
+    % Changelog
+    %   15/06/04: added parameter and chi square history
+    %   15/05/29: added setChiSquare()
+    %   15/05/21 - 0.1: first draft, not complete, but working
+    %
+
+    %TODO:
+    %  - [ ] thorough test suite
+    %  - [ ] doc: functions
+    %  - [ ] doc: class description and examples
+    %  - [ ] test + doc: write example functions used for testing purposes
+    %  - [ ] possibility not to have periodic convolution
+    %  - [x] if IRF is longer than xData, lengthen xData but fit only on
+    %  "real" points
+    %  - [ ] make the convoluted fit work even with 2+ xData intervals
+    %  - [ ] optimize the convolution embedding the shift in the class
+    %  - [x] add history of parameters
+    %  - [x] if fit is stopped through Ctrl+C, fitPar_ get the last value
+    %  of the history
+    %  - [x] user can provide chi-square function instead of model
+    %  - [ ] user-friendly global fit in another class
+
+    properties (GetAccess = private, SetAccess = private)
+        xData_       = [];  % Data
+        yData_       = [];
+        weights_     = [];  % Weights
+
+        IRF_         = [];  % Instrument Response Function
+        xIRF_        = [];
+
+        fitLength_   = [];  % Number of fit points if IRF is passed
+
+        model_       = [];  % Fit model
+        nparam_      = [];  % Number of parameters
+        opt_         = [];  % Optimization options
+
+        chi2Func_    = [];  % User-defined chi-square function
+
+        start_       = [];  % Start point
+        ub_          = [];  % Upper bound
+        lb_          = [];  % Lower bound
+        Aeq_         = [];  % Equality matrix
+        beq_         = [];  % Equality vector
+        A_           = [];  % Inequality matrix
+        b_           = [];  % Inequality vector
+
+        fitPar_      = [];  % Output fit parameters
+        fitParError_ = [];  % Errors on the fit parameters
+        chi2_        = [];  % Chi square of the fit
+
+        parHistory_  = [];  % History of the parameters during minimization
+        chi2History_ = [];  % History of the chi square values
+        
+        fitStatus_   = 0;   %   0  --> fit not yet performed
+                            % 100  --> fit running
+                            % else --> exit flag of the completed fit
+
+    end  % Properties
+
+    % List of methods:  (" " are optional parameters)
+    %  - Fit_0_1("xData, yData", "weights")    --> constructor
+    %  - setData(xData, yData, "weights")      --> set data for the fitting
+    %  - setWeights(weights)                   --> set y weights
+    %  - setIRF(irf)                           --> set IRF
+    %  - setModel(@model, npars, "reset")      --> set fit model
+    %  - setChiSquare(@chi2, npars, "reset")   --> set chi-square function
+    %  - setStart(sp)                          --> set start point
+    %  - getStart()                            --> get start point
+    %  - setUb(ub)                             --> set upper bounds
+    %  - setLb(lb)                             --> set lower bounds
+    %  - setEqualityConstraints(Aeq, beq)      --> set equality matrix and vector
+    %  - setInequalityConstraints(A, b)        --> set inequality matrix and vector
+    %  - addEqualityConstraints(Arows, bels)   --> add equality constraint
+    %  - addInequalityConstraints(Arows, bels) --> add inequality constraint
+    %  - fixParameter(i, bel)                  --> equality constraint for parameter i
+    %  - setParUb(i, ub)                       --> upper bound for parameter i
+    %  - setParLb(i, lb)                       --> lower bound for parameter i
+    %  - removeEqualityConstraints("i")        --> remove all/"i-th" equality constraint
+    %  - removeInequalityConstraint("i")       --> remove all/"i-th" inequality constraint
+    %  - setFminconOptions(opt)                --> set fmincon options
+    %  - getFminconOptions()                   --> get fmincon options
+    %  - fit()                                 --> perform the fitting
+    %  - getChiSquare()                        --> get the chi square
+    %  - getFittedParameters("i")              --> get all/"the i-th" fit parameter
+    %  - getParametersErrors("i")              --> get all/"the i-th" fit parameter error
+    %  - getResiduals()                        --> get fit residuals
+    %  - fitEval("x")                          --> evaluate fit function on xData_/"x"
+    %  - getParHistory()                       --> get the parameter history
+    %  - getChi2History()                      --> get the chi square history
+    %  - resetHistory()                        --> reset all the histories
+    methods
+
+        function F = Fit(xData, yData, weights)  % Constructor
+            if nargin == 1
+                msgID = 'FIT:Constructor_argumentsNumber';
+                msg = 'Wrong number of arguments passed to constructor. Zero, two or three allowed.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+            if nargin == 2
+                F.setData(xData, yData);
+            end
+            if nargin == 3
+                F.setData(xData, yData, weights);
+            end
+
+            F.opt_ = optimoptions(@fmincon);
+            F.opt_.MaxFunEvals = 5000;
+            F.opt_.TolX = 1e-12;
+            F.opt_.Display = 'none';
+            F.opt_.OutputFcn = @F.updateHistory;
+        end
+
+
+        function setData(F, xData, yData, weights)  % Set data for the fitting
+            if nargin < 3
+                msgID = 'FIT:setData_argumentsNumber';
+                msg = 'Wrong number of arguments passed to setData; expects at least two.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+
+            if length(xData) ~= length(yData)
+                msgID = 'FIT:setData_argumentsLength';
+                msg = 'xData and yData must have the same length.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+
+            F.IRF_ = [];
+
+            F.xData_ = xData(:);
+            F.yData_ = yData(:);
+
+            if nargin == 4
+                F.setWeights(weights);
+            else
+                F.setWeights(ones(size(F.xData_)));
+            end
+        end
+
+
+        function setWeights(F, weights)  % Set y weights
+            if isempty(F.xData_) || isempty(F.yData_)
+                msgID = 'FIT:setWeights_dataMissing';
+                msg = 'weights can be set only if xData and yData are already set.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+            if length(F.xData_) ~= length(weights)
+                msgID = 'FIT:setWeights_weightsLengths';
+                msg = 'weights must be as long as xData and yData.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+            if any(weights <= 0)
+                msgID = 'FIT:setWeights_weightsValues';
+                msg = 'weights must be strictly positive.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+
+            F.weights_ = weights(:);
+        end
+
+
+        function setIRF(F, irf)  % set IRF
+            % setIRF(irf)
+            % Set the Instrument Response Function the data will be
+            %  convoluted with. setIRF() must be called after every change
+            %  of data and/or model(i.e. every call of setData or setModel
+            %  resets the IRF).
+            %
+            % Input:
+            %  <irf>: y-data of the IRF. The x coordinates are made to
+            %    correspond to xData. If length(irf) ~= length(xData), IRF
+            %    is either cut or zero-padded to match the length of xData.
+            %
+            if isempty(F.xData_) || isempty(F.yData_)
+                msgID = 'FIT:setIRF_dataNotSet';
+                msg = 'xData and yData must be set prior to setting the IRF.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+
+            l  = length(F.xData_);
+            lI = length(irf);
+            deltaL = lI - l;
+            if deltaL > 0  % IRF longer than xData
+                F.IRF_  = irf(:);
+                dx = mean(diff(F.xData_));  % x step
+                missing = F.xData_(l) + cumsum(ones(deltaL, 1) * dx);
+                F.xIRF_ = [F.xData_; missing];
+            else
+                F.IRF_  = [irf(:); zeros(l-length(irf))];
+                F.xIRF_ = F.xData_;
+            end
+
+            F.fitLength_ = length(F.xData_);
+        end
+
+
+        function setModel(F, model, npars, reset)  % Set fit model
+            %TODO: documentation: if using convolution with IRF, the first
+            %parameter is _always_ the shift
+            if nargin < 3
+                msgID = 'FIT:setModel_nargin';
+                msg = 'Pass at least two parameters: model and number of parameters.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+            if nargin < 4
+                reset = 1;
+            end
+
+            if reset  % Reset old parameters
+                F.start_       = [];
+                F.ub_          = [];
+                F.lb_          = [];
+                F.Aeq_         = [];
+                F.beq_         = [];
+                F.A_           = [];
+                F.b_           = [];
+            end
+
+            F.fitPar_      = [];  % Fitted parameters are always reset
+            F.fitParError_ = [];
+            F.chi2_        = [];
+            F.chi2Func_    = [];
+
+            F.model_ = model;
+            F.nparam_ = npars;
+        end
+
+
+        function setChiSquare(F, chi2, npars, reset)
+            %TODO: documentation: if using convolution with IRF, the first
+            %parameter is _always_ the shift
+            if nargin < 3
+                msgID = 'FIT:setChiSquare_nargin';
+                msg = 'Pass at least two parameters: model and number of parameters.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+            if nargin < 4
+                reset = 1;
+            end
+
+            if reset  % Reset old parameters
+                F.start_       = [];
+                F.ub_          = [];
+                F.lb_          = [];
+                F.Aeq_         = [];
+                F.beq_         = [];
+                F.A_           = [];
+                F.b_           = [];
+            end
+
+            F.fitPar_      = [];  % Fitted parameters are always reset
+            F.fitParError_ = [];
+            F.chi2_        = [];
+            F.model_       = [];
+
+            F.IRF_         = [];  % If chi-square function is passed, the model
+                                  %  evaluation is not performed by Fit
+
+            F.chi2Func_ = chi2;
+            F.nparam_ = npars;
+        end
+
+
+        function setStart(F, sp)  % Set start point
+            if length(sp) ~= F.nparam_
+                msgID = 'FIT:setStart_numberParams';
+                msg = 'The number of elements of startpoint vector is different from the number of parameters.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            else
+                F.start_ = sp(:)';
+            end
+        end
+
+
+        function sp = getStart(F)
+            sp = F.start_;
+        end
+
+
+        function setUb(F, ub)  % Set upper bounds
+            if length(ub) ~= F.nparam_
+                msgID = 'FIT:setUb_numberParams';
+                msg = 'The number of elements of upper bounds vector is different from the number of parameters.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            else
+                F.ub_ = ub(:)';
+            end
+        end
+
+
+        function setLb(F, lb)  % Set lower bounds
+             if length(lb) ~= F.nparam_
+                msgID = 'FIT:setLb_numberParams';
+                msg = 'The number of elements of lower bounds vector is different from the number of parameters.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            else
+                F.lb_ = lb(:)';
+            end
+        end
+
+
+        function setEqualityConstraints(F, Aeq, beq)  % Set equality matrix and vector
+            s = size(Aeq);
+            if s(1) ~= length(beq)
+                msgID = 'FIT:setEqualityConstraints_AeqSize';
+                msg = 'The number of rows of Aeq is different from the length of beq.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+            if s(2) ~= F.nparam_
+                msgID = 'FIT:setEqualityConstraints_AeqSize';
+                msg = 'The number of columns of Aeq is different from the number of parameters.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+
+            F.Aeq_ = Aeq;
+            F.beq_ = beq(:);
+        end
+
+
+        function setInequalityConstraints(F, A, b)  % Set inequality matrix and vector
+            s = size(A);
+            if s(1) ~= length(b)
+                msgID = 'FIT:setInequalityConstraints_ASize';
+                msg = 'The number of rows of A is different from the length of b.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+            if s(2) ~= F.nparam_
+                msgID = 'FIT:setInequalityConstraints_ASize';
+                msg = 'The number of columns of A is different from the number of parameters.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+
+            F.A_ = A;
+            F.b_ = b(:);
+        end
+
+
+        function addEqualityConstraints(F, Arows, bels)  % Add equality constraint
+            s = size(Arows);
+            if s(1) ~= length(bels)
+                msgID = 'FIT:addEqualityConstraints_ArowsSize';
+                msg = 'The number of rows of Arows is different from the length of bels.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+            if s(2) ~= F.nparam_
+                msgID = 'FIT:addEqualityConstraints_ArowsSize';
+                msg = 'The number of columns of Arows is different from the number of parameters.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+
+            F.Aeq_ = [[]; Arows];
+            F.beq_ = [[]; bels(:)];
+        end
+
+
+        function addInequalityConstraints(F, Arows, bels)  % Add inequality constraint
+            if s(1) ~= length(beq)
+                msgID = 'FIT:addInequalityConstraints_ArowsSize';
+                msg = 'The number of rows of Arows is different from the length of bels.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+            if s(2) ~= F.nparam_
+                msgID = 'FIT:addInequalityConstraints_ArowsSize';
+                msg = 'The number of columns of Arows is different from the number of parameters.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+
+            F.A_ = [[]; Arows];
+            F.b_ = [[]; bels(:)];
+        end
+
+
+        function fixParameter(F, i, bel)
+            %%% TODO: write method
+        end
+
+
+        function setParUb(F, i, ub)
+            %%% TODO: write method
+        end
+
+
+        function setParLb(F, i, lb)
+            %%% TODO: write method
+        end
+
+
+        function removeEqualityConstraints(F, i)
+            %%% TODO: write method
+            if nargin == 2
+            else
+            end
+        end
+
+
+        function removeInequalityConstraint(F, i)
+            %%% TODO: write method
+            if nargin == 2
+            else
+            end
+        end
+
+
+        function setFminconOptions(F, opt)
+            F.opt_ = opt;
+        end
+
+
+        function opt = getFminconOptions(F)
+            opt = F.opt_;
+        end
+
+
+        function fit(F)
+            %%% TODO: check conditions
+            if isempty(F.model_) && isempty(F.chi2Func_)
+                msgID = 'FIT:fit_noModelSet';
+                msg = 'A model is needed to perform the fit.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+            if isempty(F.xData_) || isempty(F.yData_)
+                msgID = 'FIT:fit_noData';
+                msg = 'No data to fit.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+            if isempty(F.start_)
+                msgID = 'FIT:fit_noStartPoint';
+                msg = 'A start point is needed to initialize the fit.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+            
+            F.fitStatus_ = 100;  % Fit started
+            cleanupObj = onCleanup(@F.fitInterrupted);
+
+            if isempty(F.chi2Func_)
+                if isempty(F.IRF_)
+                    [fitted, chi2, exitflag] = fmincon(@F.minFun, ...
+                        F.start_, F.A_, F.b_, ...
+                        F.Aeq_, F.beq_, F.lb_, F.ub_, [], F.opt_);
+                else
+                    [fitted, chi2, exitflag] = fmincon(@F.minFunConv, ...
+                        F.start_, F.A_, F.b_, ...
+                        F.Aeq_, F.beq_, F.lb_, F.ub_, [], F.opt_);
+                end
+            else
+                [fitted, chi2, exitflag] = fmincon(@F.extChi2Fun, ...
+                        F.start_, F.A_, F.b_, ...
+                        F.Aeq_, F.beq_, F.lb_, F.ub_, [], F.opt_);
+            end
+            F.fitPar_ = fitted(:)';
+
+            F.chi2_ = chi2;
+            switch exitflag
+                case 1
+                    % Fit converged
+                case 0
+                    warning('Fit stopped: exceeded MaxIter or MaxFunEval.');
+                case -1
+                    warning('Fit stopped: stopped by output function or plot function');
+                case -2
+                    warning('Fit stopped: no feasible point found.');
+                case 2
+                    warning('Fit stopped: change in x better than TolX.');
+                case -3
+                    warning('Fit stopped: objective function less than ObjectiveLimit.');
+                otherwise
+                    warning(['Fit stopped: error ', num2str(exitflag)]);
+            end
+            F.fitStatus_ = exitflag;
+        end
+
+
+        function chi2 = getChiSquare(F)
+            chi2 = F.chi2_;
+        end
+
+
+        function pars = getFittedParameters(F, i)
+            if isempty(F.fitPar_)
+                msgID = 'FIT:getFittedParameters_fitNotPerformed';
+                msg = 'Fit not yet performed or not converged.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+            if nargin == 2
+                if i <= length(F.fitPar_)
+                    pars = F.fitPar_(i);
+                else
+                    msgID = 'FIT:getFittedParameters_wrongIndex';
+                    msg = 'i greater than number of parameters.';
+                    exception = MException(msgID, msg);
+
+                    throw(exception);
+                end
+            else
+                pars = F.fitPar_;
+            end
+        end
+
+
+        function getParametersErrors(F, i)
+            %%% TODO: write method
+            if nargin == 2
+            else
+            end
+        end
+
+
+        function res = getResiduals(F)
+            if isempty(F.fitPar_)
+                msgID = 'FIT:getResiduals_fitNotPerformed';
+                msg = 'Before evaluating residuals the fit must be performed.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+
+            if isempty(F.chi2Func_)
+                if isempty(F.IRF_)
+                    yFit = F.model_(F.xData_, F.fitPar_);
+                    res = F.residuals(yFit);
+                else
+                    yFit = F.model_(F.xIRF_, F.fitPar_(2:end));
+                    % Convolve fit points with IRF and normalize
+                    yFit_c = F.altConv(yFit, F.IRF_, F.fitPar_(1));
+                    yFit_c = yFit_c * sum(yFit)/sum(yFit_c);
+                    res = F.residuals(yFit_c(1:F.fitLength_));
+                end
+            else
+                msgID = 'FIT:getResiduals_externalChi2Eval';
+                msg = 'Residuals cannot be computed when an external chi-square function is provided.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+        end
+
+
+        function [y, xIRF] = fitEval(F, x)
+            if isempty(F.fitPar_)
+                par = F.start_;
+                warning('Fit not performed; evaluation on start point');
+            else
+                par = F.fitPar_;
+            end
+
+            if isempty(F.IRF_)
+                if nargin == 2
+                    y = F.model_(x(:), par);
+                else
+                    y = F.fitEval(F.xData_);
+                end
+
+                xIRF = [];
+            else  % if the IRF is passed, fit can only be evaluated on xIRF_
+                yFit = F.model_(F.xIRF_, par(2:end));
+                % Convolve fit points with IRF and normalize
+                yFit_c = F.altConv(yFit, F.IRF_, par(1));
+                y = yFit_c * sum(yFit)/sum(yFit_c);
+
+                xIRF = F.xIRF_;
+            end
+
+        end
+
+
+        function history = getParHistory(F)
+            history = F.parHistory_;
+        end
+
+
+        function history = getChi2History(F)
+            history = F.chi2History_;
+        end
+
+
+        function resetHistory(F)
+            F.parHistory_ = [];
+            F.chi2History_ = [];
+        end
+
+    end  % Public methods
+
+    methods (Access = private)
+
+        function c = altConv(F, x, y, s)  % Redefine convolution as product of FT
+            c = ifft(fft(fshift(x, s)) .* fft(y));
+        end
+
+        function res = residuals(F, yFit)
+            res = F.yData_ - yFit;
+        end
+
+
+        function chi2 = chisquare(F, res, weights)
+            chi2 = sum(res.^2 .* weights);
+        end
+
+
+        function chi2 = minFun(F, par)
+            yFit = F.model_(F.xData_, par);
+            res = F.residuals(yFit);
+            chi2 = F.chisquare(res, F.weights_);
+        end
+
+
+        function chi2 = minFunConv(F, par)
+            yFit = F.model_(F.xIRF_, par(2:end));
+            % Convolve fit points with IRF and normalize
+            yFit_c = F.altConv(yFit, F.IRF_, par(1));
+            yFit_c = yFit_c * sum(yFit)/sum(yFit_c);
+            res = F.residuals(yFit_c(1:F.fitLength_));
+            chi2 = F.chisquare(res, F.weights_);
+        end
+
+        function chi2 = extChi2Fun(F, par)
+            chi2 = F.chi2Func_(F.xData_, par);
+        end
+
+        function stop = updateHistory(F, x, optimValues, state)
+            stop = false;
+
+            F.parHistory_ = [F.parHistory_; x(:)'];
+            F.chi2History_ = [F.chi2History_; optimValues.fval];
+        end
+
+        function fitInterrupted(F)
+            if F.fitStatus_ == 100
+                F.fitPar_ = F.parHistory_(end,:);
+                disp('')
+                disp('-------------------------------------------')
+                disp('Last parameters value:')
+                disp(F.fitPar_)
+                disp('-------------------------------------------')
+                disp('')
+            end
+        end
+    end  % Private methods
+
+end  % Class
