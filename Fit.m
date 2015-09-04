@@ -54,7 +54,7 @@ classdef Fit < handle
 
         parHistory_  = [];  % History of the parameters during minimization
         chi2History_ = [];  % History of the chi square values
-        
+
         fitStatus_   = 0;   %   0  --> fit not yet performed
                             % 100  --> fit running
                             % else --> exit flag of the completed fit
@@ -414,22 +414,77 @@ classdef Fit < handle
 
 
         function fixParameter(F, i, bel)
-            %%% TODO: write method
+            % fixParameter(i, bel)
+            % Set a fixed value <bel> for parameter number <i>.
+            %
+            % Input:
+            %  <i>: number of the parameter whose parameter will be fixed.
+            %  <bel>: value of the parameter.
+
+            if (i < 1) || (i > F.nparam_)
+                msgID = 'FIT:fixParameter_iValue';
+                msg = 'i is less than 1 or greater than number of parameters.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+
+            % Set lower bound, upper bound and constraint euqal to <bel>
+            F.setParUb(i, bel);
+            F.setParLb(i, bel);
+
+            vect = zeros(1, F.nparam_);
+            vect(i) = 1;
+            F.addEqualityConstraints(vect(:)', bel);
+
+            % Set initial point
+            F.start_(i) = bel;
         end
 
 
         function setParUb(F, i, ub)
-            %%% TODO: write method
+            % setParUb(i, ub)
+            % Set an upper bound <ub> for parameter number <i>.
+            %
+            % Input:
+            %  <i>: number of the parameter whose upper bound will be set.
+            %  <ub>: value of the upper bound.
+
+            if (i < 1) || (i > F.nparam_)
+                msgID = 'FIT:setParUb_iValue';
+                msg = 'i is less than 1 or greater than number of parameters.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+
+            F.ub_(i) = ub;
         end
 
 
         function setParLb(F, i, lb)
-            %%% TODO: write method
+            % setParLb(i, lb)
+            % Set a lower bound <lb> for parameter number <i>.
+            %
+            % Input:
+            %  <i>: number of the parameter whose lower bound will be set.
+            %  <lb>: value of the lower bound.
+
+            if (i < 1) || (i > F.nparam_)
+                msgID = 'FIT:setParLb_iValue';
+                msg = 'i is less than 1 or greater than number of parameters.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+
+            F.lb_(i) = lb;
         end
 
 
         function removeEqualityConstraints(F, i)
             %%% TODO: write method
+
             if nargin == 2
             else
             end
@@ -477,7 +532,7 @@ classdef Fit < handle
 
                 throw(exception);
             end
-            
+
             F.fitStatus_ = 100;  % Fit started
             cleanupObj = onCleanup(@F.fitInterrupted);
 
