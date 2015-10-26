@@ -1,4 +1,4 @@
-suite = matlab.unittest.TestSuite.fromFolder(pwd);
+suite = matlab.unittest.TestSuite.fromFolder('./test');
 suite = suite(1:end-1);
 w = warning();
 warning('off', 'all');
