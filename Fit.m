@@ -24,7 +24,7 @@ classdef Fit < handle
     %  - [x] user can provide chi-square function instead of model
     %  - [ ] user-friendly global fit in another class
 
-    properties (GetAccess = private, SetAccess = private)
+    properties (GetAccess = public, SetAccess = private)
         xData_       = [];  % Data
         yData_       = [];
         weights_     = [];  % Weights
@@ -387,13 +387,14 @@ classdef Fit < handle
                 throw(exception);
             end
 
-            F.Aeq_ = [[]; Arows];
-            F.beq_ = [[]; bels(:)];
+            F.Aeq_ = [F.Aeq_; Arows];
+            F.beq_ = [F.beq_; bels(:)];
         end
 
 
         function addInequalityConstraints(F, Arows, bels)  % Add inequality constraint
-            if s(1) ~= length(beq)
+            s = size(Arows);
+            if s(1) ~= length(bels)
                 msgID = 'FIT:addInequalityConstraints_ArowsSize';
                 msg = 'The number of rows of Arows is different from the length of bels.';
                 exception = MException(msgID, msg);
