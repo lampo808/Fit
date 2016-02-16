@@ -152,6 +152,8 @@ classdef Fit < handle
 
             F.xData_ = xData(:);
             F.yData_ = yData(:);
+            
+            F.setDataMask(ones(size(F.xData_)));
 
             if nargin == 4
                 F.setWeights(weights);
