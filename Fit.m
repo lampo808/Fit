@@ -1,11 +1,13 @@
 classdef Fit < handle
     % Fit: generic class for contrained fitting using fmincon()
-    % v. 0.1
+    % v. 0.2
     %
     % Changelog
-    %   15/06/04: added parameter and chi square history
-    %   15/05/29: added setChiSquare()
-    %   15/05/21 - 0.1: first draft, not complete, but working
+    %   15/02/16: introduced dataMask; pretty much everything tested in 
+    %       real life
+    %   04/06/15: added parameter and chi square history
+    %   29/05/15: added setChiSquare()
+    %   21/05/15 - 0.1: first draft, not complete, but working
     %
 
     %TODO:
@@ -16,18 +18,20 @@ classdef Fit < handle
     %  - [ ] possibility not to have periodic convolution
     %  - [x] if IRF is longer than xData, lengthen xData but fit only on
     %  "real" points
-    %  - [ ] make the convoluted fit work even with 2+ xData intervals
+    %  - [x] make the convoluted fit work even with 2+ xData intervals
     %  - [ ] optimize the convolution embedding the shift in the class
     %  - [x] add history of parameters
     %  - [x] if fit is stopped through Ctrl+C, fitPar_ get the last value
     %  of the history
     %  - [x] user can provide chi-square function instead of model
-    %  - [ ] user-friendly global fit in another class
+    %  - [ ] user-friendly global fit
 
     properties (GetAccess = public, SetAccess = private)
         xData_       = [];  % Data
         yData_       = [];
         weights_     = [];  % Weights
+        
+        dataMask_    = [];  % Mask to subselect fit data
 
         IRF_         = [];  % Instrument Response Function
         xIRF_        = [];
@@ -64,6 +68,8 @@ classdef Fit < handle
     % List of methods:  (" " are optional parameters)
     %  - Fit_0_1("xData, yData", "weights")    --> constructor
     %  - setData(xData, yData, "weights")      --> set data for the fitting
+    %  - setDataMask(mask)                     --> set a mask on experimental data
+    %  - setDataMaskByIndices(ind)             --> set a mask given the indices
     %  - setWeights(weights)                   --> set y weights
     %  - setIRF(irf)                           --> set IRF
     %  - setModel(@model, npars, "reset")      --> set fit model
@@ -133,6 +139,14 @@ classdef Fit < handle
 
                 throw(exception);
             end
+            
+            if isempty(xData)
+                msgID = 'FIT:setData_argumentsLength';
+                msg = 'xData and yData cannot be empty.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
 
             F.IRF_ = [];
 
@@ -144,6 +158,49 @@ classdef Fit < handle
             else
                 F.setWeights(ones(size(F.xData_)));
             end
+        end
+        
+        
+        function setDataMask(F, mask)
+            if isempty(F.xData_) || isempty(F.yData_)
+                msgID = 'FIT:setDataMask_dataMissing';
+                msg = 'A mask can be set only if xData and yData are already set.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+            if size(F.xData_) ~= size(mask)
+                msgID = 'FIT:setDataMask_maskLength';
+                msg = 'mask must be as long as xData and yData.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+            
+            F.dataMask_ = (mask ~= 0);
+        end
+        
+        
+        function setDataMaskByIndices(F, ind)
+            if any(ind <= 0)
+                msgID = 'FIT:setDataMaskByIndices_nonPositiveIndex';
+                msg = 'Indices must be strictly positive.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+            if any(ind > length(F.xData_))
+                msgID = 'FIT:setDataMaskByIndices_indexTooBig';
+                msg = 'Indices cannot be greater than length(xData).';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+            
+            mask = zeros(size(F.xData_));
+            mask(ind) = 1;
+            
+            F.setDataMask(mask);
         end
 
 
@@ -165,6 +222,13 @@ classdef Fit < handle
             if any(weights <= 0)
                 msgID = 'FIT:setWeights_weightsValues';
                 msg = 'weights must be strictly positive.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+            if any(isinf(weights))
+                msgID = 'FIT:setWeights_weightsValues';
+                msg = 'weights must be finite.';
                 exception = MException(msgID, msg);
 
                 throw(exception);
@@ -409,8 +473,8 @@ classdef Fit < handle
                 throw(exception);
             end
 
-            F.A_ = [[]; Arows];
-            F.b_ = [[]; bels(:)];
+            F.A_ = [[F.A_]; Arows];
+            F.b_ = [[F.b_]; bels(:)];
         end
 
 
@@ -690,11 +754,11 @@ classdef Fit < handle
     methods (Access = private)
 
         function c = altConv(F, x, y, s)  % Redefine convolution as product of FT
-            c = ifft(fft(fshift(x, s)) .* fft(y));
+            c = real(ifft(fft(fshift(x, s)) .* fft(y)));
         end
 
         function res = residuals(F, yFit)
-            res = F.yData_ - yFit;
+            res = (F.yData_ - yFit).*F.dataMask_;
         end
 
 
@@ -720,7 +784,8 @@ classdef Fit < handle
         end
 
         function chi2 = extChi2Fun(F, par)
-            chi2 = F.chi2Func_(F.xData_, par);
+            xDataMasked = F.xData_(F.dataMask_);
+            chi2 = F.chi2Func_(xDataMasked, par);
         end
 
         function stop = updateHistory(F, x, optimValues, state)
