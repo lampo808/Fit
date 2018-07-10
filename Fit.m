@@ -1,9 +1,10 @@
 classdef Fit < handle
-    % Fit: generic class for contrained fitting using fmincon()
-    % v. 0.2
+    % Fit: generic class for constrained fitting using fmincon()
+    % v. 0.2.1
     %
     % Changelog
-    %   15/02/16: introduced dataMask; pretty much everything tested in 
+    %   01/03/16: added fit error estimation via Hessian estimation
+    %   15/02/16: introduced dataMask; pretty much everything tested in
     %       real life
     %   04/06/15: added parameter and chi square history
     %   29/05/15: added setChiSquare()
@@ -30,7 +31,7 @@ classdef Fit < handle
         xData_       = [];  % Data
         yData_       = [];
         weights_     = [];  % Weights
-        
+
         dataMask_    = [];  % Mask to subselect fit data
 
         IRF_         = [];  % Instrument Response Function
@@ -66,7 +67,7 @@ classdef Fit < handle
     end  % Properties
 
     % List of methods:  (" " are optional parameters)
-    %  - Fit_0_1("xData, yData", "weights")    --> constructor
+    %  - Fit("xData, yData", "weights")        --> constructor
     %  - setData(xData, yData, "weights")      --> set data for the fitting
     %  - setDataMask(mask)                     --> set a mask on experimental data
     %  - setDataMaskByIndices(ind)             --> set a mask given the indices
@@ -89,7 +90,7 @@ classdef Fit < handle
     %  - removeInequalityConstraint("i")       --> remove all/"i-th" inequality constraint
     %  - setFminconOptions(opt)                --> set fmincon options
     %  - getFminconOptions()                   --> get fmincon options
-    %  - fit()                                 --> perform the fitting
+    %  - fit("calculateErrors")                                 --> perform the fitting "and calculate the errors on fit parameters"
     %  - getChiSquare()                        --> get the chi square
     %  - getFittedParameters("i")              --> get all/"the i-th" fit parameter
     %  - getParametersErrors("i")              --> get all/"the i-th" fit parameter error
@@ -139,7 +140,7 @@ classdef Fit < handle
 
                 throw(exception);
             end
-            
+
             if isempty(xData)
                 msgID = 'FIT:setData_argumentsLength';
                 msg = 'xData and yData cannot be empty.';
@@ -152,7 +153,7 @@ classdef Fit < handle
 
             F.xData_ = xData(:);
             F.yData_ = yData(:);
-            
+
             F.setDataMask(ones(size(F.xData_)));
 
             if nargin == 4
@@ -161,8 +162,8 @@ classdef Fit < handle
                 F.setWeights(ones(size(F.xData_)));
             end
         end
-        
-        
+
+
         function setDataMask(F, mask)
             if isempty(F.xData_) || isempty(F.yData_)
                 msgID = 'FIT:setDataMask_dataMissing';
@@ -178,11 +179,11 @@ classdef Fit < handle
 
                 throw(exception);
             end
-            
+
             F.dataMask_ = (mask ~= 0);
         end
-        
-        
+
+
         function setDataMaskByIndices(F, ind)
             if any(ind <= 0)
                 msgID = 'FIT:setDataMaskByIndices_nonPositiveIndex';
@@ -198,10 +199,10 @@ classdef Fit < handle
 
                 throw(exception);
             end
-            
+
             mask = zeros(size(F.xData_));
             mask(ind) = 1;
-            
+
             F.setDataMask(mask);
         end
 
@@ -576,7 +577,10 @@ classdef Fit < handle
         end
 
 
-        function fit(F)
+        function fit(F, calculateErrors)
+            if nargin < 2
+                calculateErrors = 1;
+            end
             %%% TODO: check conditions
             if isempty(F.model_) && isempty(F.chi2Func_)
                 msgID = 'FIT:fit_noModelSet';
@@ -605,20 +609,26 @@ classdef Fit < handle
 
             if isempty(F.chi2Func_)
                 if isempty(F.IRF_)
-                    [fitted, chi2, exitflag] = fmincon(@F.minFun, ...
-                        F.start_, F.A_, F.b_, ...
-                        F.Aeq_, F.beq_, F.lb_, F.ub_, [], F.opt_);
+                    minFun = @F.minFun;
                 else
-                    [fitted, chi2, exitflag] = fmincon(@F.minFunConv, ...
-                        F.start_, F.A_, F.b_, ...
-                        F.Aeq_, F.beq_, F.lb_, F.ub_, [], F.opt_);
+                    minFun = @F.minFunConv;
                 end
             else
-                [fitted, chi2, exitflag] = fmincon(@F.extChi2Fun, ...
+                minFun = @F.extChi2Fun;
+            end
+
+            [fitted, chi2, exitflag] = fmincon(minFun, ...
                         F.start_, F.A_, F.b_, ...
                         F.Aeq_, F.beq_, F.lb_, F.ub_, [], F.opt_);
-            end
+
             F.fitPar_ = fitted(:)';
+
+            if calculateErrors
+                hess = hessian(minFun, F.fitPar_);
+
+                err = sqrt(diag(inv(hess)));
+                F.fitParError_ = err(:)';
+            end
 
             F.chi2_ = chi2;
             switch exitflag
@@ -631,7 +641,7 @@ classdef Fit < handle
                 case -2
                     warning('Fit stopped: no feasible point found.');
                 case 2
-                    warning('Fit stopped: change in x better than TolX.');
+%                     warning('Fit stopped: change in x better than TolX.');
                 case -3
                     warning('Fit stopped: objective function less than ObjectiveLimit.');
                 otherwise
@@ -670,10 +680,35 @@ classdef Fit < handle
         end
 
 
-        function getParametersErrors(F, i)
-            %%% TODO: write method
+        function ers = getParametersErrors(F, i)
+        % Return the errors estimated on a non-constrained Hessian
+
+            if isempty(F.fitPar_)
+                msgID = 'FIT:getParametersErrors_fitNotPerformed';
+                msg = 'Fit not yet performed or not converged.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            elseif isempty(F.fitParError_)
+                msgID = 'FIT:getParametersErrors_ErrorsNotCalculated';
+                msg = 'Fit has been performed without error calculation.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+
             if nargin == 2
+                if i <= length(F.fitParError_)
+                    ers = F.fitParError_(i);
+                else
+                    msgID = 'FIT:getParametersErrors_wrongIndex';
+                    msg = 'i greater than number of parameters.';
+                    exception = MException(msgID, msg);
+
+                    throw(exception);
+                end
             else
+                ers = F.fitParError_;
             end
         end
 

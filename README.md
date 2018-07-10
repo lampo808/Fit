@@ -5,6 +5,4 @@ TODO: complete basic README
 ## Content
 
  * Fit.m
- * DecayFit.m
  * fshift.m
- *
