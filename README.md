@@ -39,7 +39,12 @@ chi2 = fit.getChiSquare()/numel(time);  % Get the chi square
 parErrors = fit.getParametersErrors();  % Retrieve the parameters uncertainties
 ...
 ```
-<!-- TODO: put examples here -->
+
+## Getting started
+
+At the moment, the best way to get started is to download/clone the repo, add it to your MATLAB path and run the examples under the folder `examples` (surprise, surprise).
+In the same folder look for the `README` for a descritpion of the example content.
+
 
 
 <!-- ## Content
