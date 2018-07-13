@@ -8,8 +8,6 @@ close all
 
 rng(1)  % Set a seed for the random number generation (for reproducibility)
 
-toColumn = @(x) x(:);  % Helper function: the data must be in column vectors
-
 Gaussian = @(x, A, x0, s) A*exp(-(x-x0).^2/(2*s.^2));
 model = @(x, p) Gaussian(x, p(1), p(2), p(3)) + Gaussian(x, p(4), p(5), p(6)) + ...
     Gaussian(x, p(7), p(8), p(9));  % Sum of three Gaussians
@@ -37,8 +35,8 @@ noise = 0.05;  % Poisson noise on the data
 figure()
 hold on
 for i=1:size(pars, 1)
-    xData{i} = toColumn(linspace(-1, 8, N));
-    yData{i} = toColumn(model(xData{i}, pars(i,:))) + ...
+    xData{i} = linspace(-1, 8, N);
+    yData{i} = model(xData{i}, pars(i,:)) + ...
         noise/10*poissrnd(10, size(xData{i}));
     plot(xData{i}, yData{i}, '.')
 end
@@ -58,7 +56,7 @@ fit_errs = gf.getParamersErrors();  % ...and their errors
 % Evaluate and plot the fit
 hold on
 for i=1:size(pars, 1)
-    yData{i} = toColumn(model(xData{i}, fit_pars(i,:)));
+    yData{i} = model(xData{i}, fit_pars(i,:));
     plot(xData{i}, yData{i}, '-')
 end
 hold off

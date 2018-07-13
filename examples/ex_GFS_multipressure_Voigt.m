@@ -10,8 +10,6 @@ addpath('./fadf')
 
 rng(1)  % Set a seed for the random number generation (for reproducibility)
 
-toColumn = @(x) x(:);  % Helper function: the data must be in column vectors
-
 % The model represents a pressure-boradened line
 % p(1) -> Line amplitude
 % p(2) -> pressure (not a fitting parameter, must be held fixed)
@@ -36,8 +34,8 @@ noise = 0.005;  % Absolute noise level
 figure()
 hold on
 for i=1:size(pars, 1)
-    xData{i} = toColumn(linspace(-5, 5, N));
-    yData{i} = toColumn(model(xData{i}, pars(i,:))) + noise*randn(size(xData{i}));
+    xData{i} = linspace(-5, 5, N);
+    yData{i} = model(xData{i}, pars(i,:)) + noise*randn(size(xData{i}));
     plot(xData{i}, yData{i}, '.')
 end
 hold off
@@ -54,7 +52,7 @@ gf = GlobalFitSimple();  % Instantiate the class
 gf.setData(xData, yData);  % Set the data to fit
 
 % Set the model
-gf.setModel(model, 6, [0 0 1 1 1 1]) 
+gf.setModel(model, 6, [0 0 1 1 1 1])
 gf.setStart(pars.*(1+0.1*randn(size(pars))))  % Set start point
 
 % Set upper/lower bounds, and fixed parameters. For this kind of complicate
@@ -62,7 +60,7 @@ gf.setStart(pars.*(1+0.1*randn(size(pars))))  % Set start point
 gf.setUb(ub);
 gf.setLb(lb);
 gf.fixParameters(fixed);
-gf.fit()  % Run the fit! 
+gf.fit()  % Run the fit!
 fit_pars = gf.getFittedParameters();  % Retrieve the fitted parameters...
 fit_errs = gf.getParamersErrors();  % ...and their errors
 
@@ -72,7 +70,7 @@ disp(pars - fit_pars);
 % Evaluate and plot the fit
 hold on
 for i=1:size(pars, 1)
-    yData{i} = toColumn(model(xData{i}, fit_pars(i,:)));
+    yData{i} = model(xData{i}, fit_pars(i,:));
     plot(xData{i}, yData{i}, '-')
 end
 hold off

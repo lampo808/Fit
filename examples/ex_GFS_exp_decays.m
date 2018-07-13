@@ -8,8 +8,6 @@ close all
 
 rng(1)  % Set a seed for the random number generation (for reproducibility)
 
-toColumn = @(x) x(:);  % Helper function: the data must be in column vectors
-
 model = @(x, p) p(1)*exp(-x/p(2)) + p(3)*exp(-x/p(4));  % Bi-exponential decay
 
 % Parameters for the simulated dataset
@@ -28,9 +26,9 @@ N = 120;  % Points per curve
 figure()
 hold on
 for i=1:size(pars, 1)
-    xData{i} = toColumn(linspace(0, 5*t2, N));
+    xData{i} = linspace(0, 5*t2, N);
     % Poisson sampling of the point ordinate (like photon counting)
-    yData{i} = toColumn(poissrnd(model(xData{i}, pars(i,:))));
+    yData{i} = poissrnd(model(xData{i}, pars(i,:)));
     plot(xData{i}, yData{i}, '.')
 end
 hold off
@@ -49,7 +47,7 @@ fit_errs = gf.getParamersErrors();  % ...and their errors
 % Evaluate and plot the fit
 hold on
 for i=1:size(pars, 1)
-    yData{i} = toColumn(model(xData{i}, fit_pars(i,:)));
+    yData{i} = model(xData{i}, fit_pars(i,:));
     plot(xData{i}, yData{i}, '-')
 end
 hold off
