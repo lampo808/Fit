@@ -751,7 +751,7 @@ classdef Fit < handle
         function [y, xIRF] = fitEval(F, x)
             if isempty(F.fitPar_)
                 par = F.start_;
-                warning('Fit not performed; evaluation on start point');
+%                 warning('Fit not performed; evaluation on start point');
             else
                 par = F.fitPar_;
             end

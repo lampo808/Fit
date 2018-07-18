@@ -43,8 +43,8 @@ hold off
 % Define the marices for upper and lower bounds, and for the fixed
 % parameters. NaN means no bound/fix
 for i=1:length(p)
-    ub(i,:) = [1.5, NaN, 0.8, 0.1, 0.5, 5];
-    lb(i,:) = [0.1, NaN, 0.6, -0.1, 0.1, 1];
+    ub(i,:) = [1.5, Inf, 0.8, 0.1, 0.5, 5];
+    lb(i,:) = [0.1, -Inf, 0.6, -0.1, 0.1, 1];
     fixed(i,:) = [NaN, p(i), NaN, NaN, NaN, NaN];
 end
 

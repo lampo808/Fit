@@ -201,13 +201,13 @@ classdef GlobalFitSimple < handle
 
             if isempty(GFS.fitPar_)
                 par = GFS.start_;
-                warning('Fit not performed; evaluation on start point');
+%                 warning('Fit not performed; evaluation on start point');
             else
                 par = GFS.fitPar_;
             end
 
             for i=1:GFS.nDataSets_
-                y{i} = GFS.tocolumn(GFS.model_(x{i}, pars(i,:)));
+                y{i} = GFS.tocolumn(GFS.model_(x{i}, par(i,:)));
             end
         end
 
@@ -245,7 +245,7 @@ classdef GlobalFitSimple < handle
             end
         end
 
-        function col = tocolumn(v)
+        function col = tocolumn(GFS, v)
             col = v(:);
         end
     end  % Private methods
