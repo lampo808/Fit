@@ -211,6 +211,20 @@ classdef GlobalFitSimple < handle
             end
         end
 
+        function res = getResiduals(GFS)
+            if isempty(GFS.fitPar_)
+                msgID = 'GFS:getResiduals_fitNotPerformed';
+                msg = 'Before evaluating residuals the fit must be performed.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            end
+
+            yFit = GFS.fitEval();
+            for i=1:GFS.nDataSets_
+                res{i} = GFS.yData_{i} - yFit{i};
+            end
+        end
     end  % Methods
 
     methods (Access = private)
