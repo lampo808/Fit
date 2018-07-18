@@ -13,8 +13,7 @@ model = @(x, p) Gaussian(x, p(1), p(2), p(3)) + Gaussian(x, p(4), p(5), p(6)) + 
     Gaussian(x, p(7), p(8), p(9));  % Sum of three Gaussians
 
 % Parameters for the simulated dataset
-% Five datasets (one row per dataset): exponentials with the same decay
-% time, but different amplitudes
+% Five datasets (one row per dataset): Gaussians with the same position and width
 
 x0_1 = 2;  % Common positions and widths
 x0_2 = 3;
@@ -29,7 +28,7 @@ for i=1:5
 end
 
 N = 50;  % Points per curve
-noise = 0.05;  % Poisson noise on the data
+noise = 0.05;  % Absolute noise amplitude
 
 % Generate and plot data
 figure()
