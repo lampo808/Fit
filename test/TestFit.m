@@ -8,7 +8,6 @@ classdef TestFit < matlab.unittest.TestCase
             tc.assertError(@()F.setData([0, 1]), ?MException, 'FIT:setDataArgumentsNumber');
         end
 
-
         % Missing fit conditions
         % TBW
 
@@ -29,7 +28,6 @@ classdef TestFit < matlab.unittest.TestCase
             tc.assertEqual(pars, [3,4], 'AbsTol', 1e-6)
         end
 
-
         function fitSineNoise(tc)
             x = linspace(0, 10, 100);
             y = sin(3*x) + 4 + randn(size(x))*0.1;
@@ -46,7 +44,6 @@ classdef TestFit < matlab.unittest.TestCase
             tc.assertEqual(pars, [3,4], 'AbsTol', 5e-2)
         end
 
-
         function decay3exp_1(tc)
             decay_par = [30000, 350, 8000, 1000, 1000, 3000, 100];  % Decay params.
             start = [50000, 400, 5000, 1000, 1000, 2000 0];       % Start point
@@ -59,7 +56,6 @@ classdef TestFit < matlab.unittest.TestCase
             tc.assertEqual(fitParameters([2, 4]), decay_par([2, 4]), 'RelTol', 1e-1);
             tc.assertLessThanOrEqual(chi2, 1.5);
         end
-
 
         function decay3expIRF_1(tc)
             decay_par = [30000, 350, 8000, 1000, 1000, 3000, 100];  % Decay params.
@@ -92,5 +88,5 @@ classdef TestFit < matlab.unittest.TestCase
             tc.assertEqual(pars(2), 5, 'AbsTol', 1e-6)
         end
 
-    end
+    end  % Methods
 end

@@ -636,16 +636,21 @@ classdef Fit < handle
                     % Fit converged
                 case 0
                     warning('Fit stopped: exceeded MaxIter or MaxFunEval.');
+                    F.fitPar_ = NaN(size(F.fitPar_));
                 case -1
                     warning('Fit stopped: stopped by output function or plot function');
+                    F.fitPar_ = NaN(size(F.fitPar_));
                 case -2
                     warning('Fit stopped: no feasible point found.');
+                    F.fitPar_ = NaN(size(F.fitPar_));
                 case 2
 %                     warning('Fit stopped: change in x better than TolX.');
                 case -3
                     warning('Fit stopped: objective function less than ObjectiveLimit.');
+                    F.fitPar_ = NaN(size(F.fitPar_));
                 otherwise
                     warning(['Fit stopped: error ', num2str(exitflag)]);
+                    F.fitPar_ = NaN(size(F.fitPar_));
             end
             F.fitStatus_ = exitflag;
         end

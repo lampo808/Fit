@@ -1,5 +1,5 @@
 suite = matlab.unittest.TestSuite.fromFolder('./test');
-suite = suite(1:end-1);
+fprintf('Number of test found: %i\n', length(suite))
 w = warning();
 warning('off', 'all');
 result = run(suite);

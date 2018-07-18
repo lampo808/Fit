@@ -45,6 +45,8 @@ parErrors = fit.getParametersErrors();  % Retrieve the parameters uncertainties
 At the moment, the best way to get started is to download/clone the repo, add it to your MATLAB path and run the examples under the folder `examples` (surprise, surprise).
 In the same folder look for the `README` for a descritpion of the example content.
 
+To check that everythig is supposedly working as expected, try to run the test suite: execute `runTest.m`, it should run without any error ("Assertion failed").
+
 
 
 <!-- ## Content
