@@ -35,8 +35,7 @@ figure()
 hold on
 for i=1:size(pars, 1)
     xData{i} = linspace(-1, 8, N);
-    yData{i} = model(xData{i}, pars(i,:)) + ...
-        noise/10*poissrnd(10, size(xData{i}));
+    yData{i} = model(xData{i}, pars(i,:)) + noise*randn(size(xData{i}));
     plot(xData{i}, yData{i}, '.')
 end
 hold off
