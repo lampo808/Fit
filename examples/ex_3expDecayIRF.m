@@ -33,7 +33,7 @@ xData = time;  % Due to periodic boundary conditions, the fit is
 yData = decay; %  performed on the whole data set
 
 h = figure();
-semilogy(xData, yData);
+semilogy(xData, yData, 'DisplayName', 'Simulated data');
 
 model = @(x, par) par(1)*exp(-x/par(2)) + par(3)*exp(-x/par(4)) + ...
     par(5)*exp(-x/par(6)) + par(7);  % Fitting model
@@ -51,7 +51,7 @@ fit.setUb([3000, 1e6, 500, 10000, 1500, 5000, 5000, 1e2]);
 [yFit, xFit] = fit.fitEval(xData);
 figure(h)
 hold all
-plot(xFit, yFit)
+plot(xFit, yFit, 'DisplayName', 'Fit start point')
 hold off
 
 fit.fit();  % Perform the fit
@@ -67,5 +67,7 @@ disp(['Reduced chi square: ', num2str(chi2)]);
 [yFit, xFit] = fit.fitEval(xData);  % Fit evaluation
 figure(h)
 hold all
-plot(xFit, yFit)                    % Fit plotting
+plot(xFit, yFit, 'DisplayName', 'Fitted function')                    % Fit plotting
 hold off
+
+legend('show')
