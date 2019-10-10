@@ -1,10 +1,11 @@
 classdef GlobalFitSimple < handle
     % GlobalFitSimple: class for global fitting of data with the same equation
     %  and single or global parameters
-    % v. 0.1
+    % v. 0.1.1
 
     % Changelog:
-    %   05/07/2018 - 0.1: first version
+    %   10/10/19 - 0.1.1: fixed constructor
+    %   05/07/18 - 0.1: first version
 
     properties (GetAccess = public, SetAccess = private)
     xData_       = {};  % Data
@@ -53,7 +54,7 @@ classdef GlobalFitSimple < handle
 
     methods
         function GFS = GlobalFitSimple()
-            % TODO
+            GFS.F_ = Fit([1], [1]);
         end
 
         function setData(GFS, xData, yData)
@@ -68,9 +69,6 @@ classdef GlobalFitSimple < handle
                 GFS.xData_{i} = GFS.xData_{i}(:);
                 GFS.yData_{i} = GFS.yData_{i}(:);
             end
-
-            GFS.F_ = Fit([1], [1]);
-
         end
 
         function setModel(GFS, model, nPars, parsAreGlobal)
