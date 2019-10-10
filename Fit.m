@@ -1,8 +1,13 @@
 classdef Fit < handle
     % Fit: generic class for constrained fitting using fmincon()
-    % v. 0.2.1
+    % v. 0.2.2
     %
     % Changelog
+    %   10/10/19: fixed parHistory not cleared on new fit; added the
+    %       possibility to ignore fit warnings
+    %   15/11/18: the weights are automatically accounted in the
+    %       calculation of the residuals; getChiSquare() returns either the
+    %       full or reduced chi square
     %   01/03/16: added fit error estimation via Hessian estimation
     %   15/02/16: introduced dataMask; pretty much everything tested in
     %       real life
@@ -13,6 +18,8 @@ classdef Fit < handle
 
     %TODO:
     %  - [ ] thorough test suite
+    %      - [ ] test that the residuals are calculated the right way
+    %      - [ ] test that the chi square is right even before the fit
     %  - [ ] doc: functions
     %  - [ ] doc: class description and examples
     %  - [ ] test + doc: write example functions used for testing purposes
@@ -26,6 +33,10 @@ classdef Fit < handle
     %  of the history
     %  - [x] user can provide chi-square function instead of model
     %  - [ ] user-friendly global fit
+    %  - [ ] set good default options for all the minimizers and algorithms
+    %  - [ ] enable the use of Trust-region-reflective by automatically
+    %           supplying gradient
+    %  - [ ] At the moment, fitEval is limited to the IRF points. Extend.
 
     properties (GetAccess = public, SetAccess = private)
         xData_       = [];  % Data
@@ -63,6 +74,8 @@ classdef Fit < handle
         fitStatus_   = 0;   %   0  --> fit not yet performed
                             % 100  --> fit running
                             % else --> exit flag of the completed fit
+
+        ignoreFitWarnings_ = 0;  % If left 0, returns NaN fit parameters upon warning
 
     end  % Properties
 
@@ -306,6 +319,7 @@ classdef Fit < handle
             F.fitParError_ = [];
             F.chi2_        = [];
             F.chi2Func_    = [];
+            F.parHistory_  = [];
 
             F.model_ = model;
             F.nparam_ = npars;
@@ -577,9 +591,14 @@ classdef Fit < handle
         end
 
 
-        function fit(F, calculateErrors)
+        function fit(F, calculateErrors, ignoreFitWarnings)
             if nargin < 2
                 calculateErrors = 1;
+            end
+            if nargin < 3
+                F.ignoreFitWarnings_ = 0;
+            else
+                F.ignoreFitWarnings_ = ignoreFitWarnings;
             end
             %%% TODO: check conditions
             if isempty(F.model_) && isempty(F.chi2Func_)
@@ -617,9 +636,16 @@ classdef Fit < handle
                 minFun = @F.extChi2Fun;
             end
 
-            [fitted, chi2, exitflag] = fmincon(minFun, ...
-                        F.start_, F.A_, F.b_, ...
-                        F.Aeq_, F.beq_, F.lb_, F.ub_, [], F.opt_);
+            % If no constraint is set, fall back to fminunc
+            if (isempty(F.A_) && isempty(F.b_) && isempty(F.Aeq_) && ....
+                isempty(F.beq_) && isempty(F.lb_) && isempty(F.ub_))
+                [fitted, chi2, exitflag] = fminunc(minFun, ...
+                        F.start_, optimoptions('fminunc', F.opt_));
+            else
+                [fitted, chi2, exitflag] = fmincon(minFun, ...
+                            F.start_, F.A_, F.b_, ...
+                            F.Aeq_, F.beq_, F.lb_, F.ub_, [], F.opt_);
+            end
 
             F.fitPar_ = fitted(:)';
 
@@ -636,28 +662,44 @@ classdef Fit < handle
                     % Fit converged
                 case 0
                     warning('Fit stopped: exceeded MaxIter or MaxFunEval.');
-                    F.fitPar_ = NaN(size(F.fitPar_));
+                    if ~F.ignoreFitWarnings_
+                        F.fitPar_ = NaN(size(F.fitPar_));
+                    end
                 case -1
                     warning('Fit stopped: stopped by output function or plot function');
+                    if ~F.ignoreFitWarnings_
                     F.fitPar_ = NaN(size(F.fitPar_));
+                    end
                 case -2
                     warning('Fit stopped: no feasible point found.');
-                    F.fitPar_ = NaN(size(F.fitPar_));
+                    if ~F.ignoreFitWarnings_
+                        F.fitPar_ = NaN(size(F.fitPar_));
+                    end
                 case 2
 %                     warning('Fit stopped: change in x better than TolX.');
                 case -3
                     warning('Fit stopped: objective function less than ObjectiveLimit.');
-                    F.fitPar_ = NaN(size(F.fitPar_));
+                    if ~F.ignoreFitWarnings_
+                        F.fitPar_ = NaN(size(F.fitPar_));
+                    end
                 otherwise
-                    warning(['Fit stopped: error ', num2str(exitflag)]);
-                    F.fitPar_ = NaN(size(F.fitPar_));
+                    warning(['Fit stopped: flag ', num2str(exitflag), ...
+                        '\n(generally not a problem if the flag is positive)']);
             end
             F.fitStatus_ = exitflag;
         end
 
 
-        function chi2 = getChiSquare(F)
-            chi2 = F.chi2_;
+        function chi2 = getChiSquare(F, reduced)
+            if nargin < 2
+                reduced = 0;
+            end
+
+            if reduced
+                chi2 = F.chi2_/(F.fitLength_ - F.nparam_);
+            else
+                chi2 = F.chi2_;
+            end
         end
 
 
@@ -729,14 +771,11 @@ classdef Fit < handle
 
             if isempty(F.chi2Func_)
                 if isempty(F.IRF_)
-                    yFit = F.model_(F.xData_, F.fitPar_);
+                    yFit = F.fitEval();
                     res = F.residuals(yFit);
                 else
-                    yFit = F.model_(F.xIRF_, F.fitPar_(2:end));
-                    % Convolve fit points with IRF and normalize
-                    yFit_c = F.altConv(yFit, F.IRF_, F.fitPar_(1));
-                    yFit_c = yFit_c * sum(yFit)/sum(yFit_c);
-                    res = F.residuals(yFit_c(1:F.fitLength_));
+                    yFit = F.fitEval();
+                    res = F.residuals(yFit(1:F.fitLength_));
                 end
             else
                 msgID = 'FIT:getResiduals_externalChi2Eval';
@@ -772,7 +811,6 @@ classdef Fit < handle
 
                 xIRF = F.xIRF_;
             end
-
         end
 
 
@@ -800,19 +838,19 @@ classdef Fit < handle
         end
 
         function res = residuals(F, yFit)
-            res = (F.yData_ - yFit).*F.dataMask_;
+            res = (F.yData_ - yFit) .* F.dataMask_ .* sqrt(F.weights_);
         end
 
 
-        function chi2 = chisquare(F, res, weights)
-            chi2 = sum(res.^2 .* weights);
+        function chi2 = chisquare(F, res)
+            chi2 = sum(res.^2);
         end
 
 
         function chi2 = minFun(F, par)
             yFit = F.model_(F.xData_, par);
             res = F.residuals(yFit);
-            chi2 = F.chisquare(res, F.weights_);
+            chi2 = F.chisquare(res);
         end
 
 
@@ -822,7 +860,7 @@ classdef Fit < handle
             yFit_c = F.altConv(yFit, F.IRF_, par(1));
             yFit_c = yFit_c * sum(yFit)/sum(yFit_c);
             res = F.residuals(yFit_c(1:F.fitLength_));
-            chi2 = F.chisquare(res, F.weights_);
+            chi2 = F.chisquare(res);
         end
 
         function chi2 = extChi2Fun(F, par)
