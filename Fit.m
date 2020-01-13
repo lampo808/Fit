@@ -1,8 +1,9 @@
 classdef Fit < handle
     % Fit: generic class for constrained fitting using fmincon()
-    % v. 0.2.2
+    % v. 0.2.3
     %
     % Changelog
+    %   13/01/20: fixed errors on fitted parameters, plus slight cleanup
     %   10/10/19: fixed parHistory not cleared on new fit; added the
     %       possibility to ignore fit warnings
     %   15/11/18: the weights are automatically accounted in the
@@ -32,7 +33,7 @@ classdef Fit < handle
     %  - [x] if fit is stopped through Ctrl+C, fitPar_ get the last value
     %  of the history
     %  - [x] user can provide chi-square function instead of model
-    %  - [ ] user-friendly global fit
+    %  - [x] user-friendly global fit
     %  - [ ] set good default options for all the minimizers and algorithms
     %  - [ ] enable the use of Trust-region-reflective by automatically
     %           supplying gradient
@@ -194,6 +195,7 @@ classdef Fit < handle
             end
 
             F.dataMask_ = (mask ~= 0);
+            F.fitLength_ = sum(F.dataMask_);
         end
 
 
@@ -648,15 +650,15 @@ classdef Fit < handle
             end
 
             F.fitPar_ = fitted(:)';
+            F.chi2_ = chi2;
 
             if calculateErrors
                 hess = hessian(minFun, F.fitPar_);
 
-                err = sqrt(diag(inv(hess)));
+                err = sqrt(2*diag(inv(hess))*F.getChiSquare(1));
                 F.fitParError_ = err(:)';
             end
 
-            F.chi2_ = chi2;
             switch exitflag
                 case 1
                     % Fit converged
@@ -684,7 +686,7 @@ classdef Fit < handle
                     end
                 otherwise
                     warning(['Fit stopped: flag ', num2str(exitflag), ...
-                        '\n(generally not a problem if the flag is positive)']);
+                        ' (generally not a problem if the flag is positive)']);
             end
             F.fitStatus_ = exitflag;
         end
@@ -729,6 +731,7 @@ classdef Fit < handle
 
         function ers = getParametersErrors(F, i)
         % Return the errors estimated on a non-constrained Hessian
+        % NOTE: the errors are normalized to the chi square
 
             if isempty(F.fitPar_)
                 msgID = 'FIT:getParametersErrors_fitNotPerformed';
