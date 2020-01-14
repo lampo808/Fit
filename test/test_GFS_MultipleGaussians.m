@@ -21,7 +21,7 @@ for i=1:5
 end
 
 N = 50;  % Points per curve
-noise = 0.05;  % Poisson noise on the data
+noise = 0.05;  % Gaussian noise on the data
 
 % Generate data
 for i=1:size(pars, 1)

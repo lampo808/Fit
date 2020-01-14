@@ -1,10 +1,8 @@
 classdef Fit < handle
     % Fit: generic class for constrained fitting using fmincon()
-    % v. 0.2.4
+    % v. 0.2.3
     %
     % Changelog
-    %   14/01/20: changed the way of fixing parameters, now without using
-    %       equality constraints
     %   13/01/20: fixed errors on fitted parameters, plus slight cleanup
     %   10/10/19: fixed parHistory not cleared on new fit; added the
     %       possibility to ignore fit warnings
@@ -66,7 +64,6 @@ classdef Fit < handle
         beq_         = [];  % Equality vector
         A_           = [];  % Inequality matrix
         b_           = [];  % Inequality vector
-        fixed_       = [];  % Vector flag of fixed parameters
 
         fitPar_      = [];  % Output fit parameters
         fitParError_ = [];  % Errors on the fit parameters
@@ -318,7 +315,6 @@ classdef Fit < handle
                 F.beq_         = [];
                 F.A_           = [];
                 F.b_           = [];
-                F.fixed_       = false(1, npars);
             end
 
             F.fitPar_      = [];  % Fitted parameters are always reset
@@ -354,7 +350,6 @@ classdef Fit < handle
                 F.beq_         = [];
                 F.A_           = [];
                 F.b_           = [];
-                F.fixed_       = false(1, npars);
             end
 
             F.fitPar_      = [];  % Fitted parameters are always reset
@@ -518,9 +513,9 @@ classdef Fit < handle
                 throw(exception);
             end
 
-            % Set lower bound, upper bound and constraint equal to <bel>
-            F.setParUb(i, bel);
-            F.setParLb(i, bel);
+            % Set lower bound, upper bound and constraint euqal to <bel>
+%             F.setParUb(i, bel);
+%             F.setParLb(i, bel);
 
             vect = zeros(1, F.nparam_);
             vect(i) = 1;
@@ -635,42 +630,33 @@ classdef Fit < handle
 
             if isempty(F.chi2Func_)
                 if isempty(F.IRF_)
-                    minFun = @(par) F.minFun(F.expandFixedPars(par));
+                    minFun = @F.minFun;
                 else
-                    minFun = @(par) F.minFunConv(F.expandFixedPars(par));
+                    minFun = @F.minFunConv;
                 end
             else
-                minFun = @(par) F.extChi2Fun(F.expandFixedPars(par));
+                minFun = @F.extChi2Fun;
             end
 
             % If no constraint is set, fall back to fminunc
             if (isempty(F.A_) && isempty(F.b_) && isempty(F.Aeq_) && ....
                 isempty(F.beq_) && isempty(F.lb_) && isempty(F.ub_))
                 [fitted, chi2, exitflag] = fminunc(minFun, ...
-                        F.reduceFixedPars(F.start_), optimoptions('fminunc', F.opt_));
+                        F.start_, optimoptions('fminunc', F.opt_));
             else
                 [fitted, chi2, exitflag] = fmincon(minFun, ...
-                            F.reduceFixedPars(F.start_), F.A_, F.b_, ...
+                            F.start_, F.A_, F.b_, ...
                             F.Aeq_, F.beq_, F.lb_, F.ub_, [], F.opt_);
             end
 
-            F.fitPar_ = F.expandFixedPars(fitted(:)');
+            F.fitPar_ = fitted(:)';
             F.chi2_ = chi2;
 
             if calculateErrors
-                %%%%%%%%% IMPORTANT!!!! %%%%%%%%%
-                % NOTE: the errors are adjusted for chi2 = 1; this is the
-                % best estimation if the errors on the fit parameters are
-                % unknow, otherwise use the correct weights (= 1/sigma^2)
-                % and divide the estimated errors by sqrt(F.getChiSquare())
-                % (or use bootstrap)
-                % The estimate is correct only if the reduced chi square is
-                % around 1
-                hess = hessian(minFun, fitted);
+                hess = hessian(minFun, F.fitPar_);
 
-                % The factor 2 has been checked experimentally
                 err = sqrt(2*diag(inv(hess))*F.getChiSquare(1));
-                F.fitParError_ = F.expandFixedErrors(err(:)');
+                F.fitParError_ = err(:)';
             end
 
             switch exitflag
@@ -712,7 +698,7 @@ classdef Fit < handle
             end
 
             if reduced
-                chi2 = F.chi2_/(F.fitLength_ - F.nparam_ + sum(F.fixed_));
+                chi2 = F.chi2_/(F.fitLength_ - F.nparam_);
             else
                 chi2 = F.chi2_;
             end
@@ -865,7 +851,6 @@ classdef Fit < handle
 
 
         function chi2 = minFun(F, par)
-%             par = F.expandFixedPars(par);
             yFit = F.model_(F.xData_, par);
             res = F.residuals(yFit);
             chi2 = F.chisquare(res);
@@ -873,7 +858,6 @@ classdef Fit < handle
 
 
         function chi2 = minFunConv(F, par)
-%             par = F.expandFixedPars(par);
             yFit = F.model_(F.xIRF_, par(2:end));
             % Convolve fit points with IRF and normalize
             yFit_c = F.altConv(yFit, F.IRF_, par(1));
@@ -883,7 +867,6 @@ classdef Fit < handle
         end
 
         function chi2 = extChi2Fun(F, par)
-%             par = F.expandFixedPars(par);
             xDataMasked = F.xData_(F.dataMask_);
             chi2 = F.chi2Func_(xDataMasked, par);
         end
@@ -905,20 +888,6 @@ classdef Fit < handle
                 disp('-------------------------------------------')
                 disp('')
             end
-        end
-
-        function reducedPars = reduceFixedPars(F, fullPars)
-            reducedPars = fullPars(~F.fixed_);
-        end
-
-        function fullPars = expandFixedPars(F, reducedPars)
-            fullPars = F.start_;
-            fullPars(~F.fixed_) = reducedPars;
-        end
-
-        function fullErrors = expandFixedErrors(F, reducedErrors)
-            fullErrors = zeros(size(F.start_));
-            fullErrors(~F.fixed_) = reducedErrors;
         end
     end  % Private methods
 
