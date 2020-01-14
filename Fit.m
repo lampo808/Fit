@@ -501,14 +501,28 @@ classdef Fit < handle
             F.b_ = [[F.b_]; bels(:)];
         end
 
+        function fixParameters(F, fixedValues)
+            % fixParameters(F, fixedValues)
+            % Set fixed values for multiple parameters at once
+            %
+            % Input:
+            %   <fixedValues>: vector of fixed values.
+            %              Long as the number of parameters, NaNs identify parameters whose values are not fixed,
+            %              otherwise the value identify the parameter's fixed value
+                for i=1:length(fixedValues)
+                    if ~isnan(fixedValues(i))
+                        F_.fixParameter(i, fixedValues(i));
+                    end
+                end
+            end
 
-        function fixParameter(F, i, bel)
-            % fixParameter(i, bel)
-            % Set a fixed value <bel> for parameter number <i>.
+        function fixParameter(F, i, value)
+            % fixParameter(i, value)
+            % Set a fixed value <value> for parameter number <i>.
             %
             % Input:
             %  <i>: number of the parameter whose parameter will be fixed.
-            %  <bel>: value of the parameter.
+            %  <value>: value of the parameter.
 
             if (i < 1) || (i > F.nparam_)
                 msgID = 'FIT:fixParameter_iValue';
@@ -519,18 +533,18 @@ classdef Fit < handle
             end
 
             %%% Old code
-%             % Set lower bound, upper bound and constraint equal to <bel>
-%             F.setParUb(i, bel);
-%             F.setParLb(i, bel);
-% 
+%             % Set lower bound, upper bound and constraint equal to <value>
+%             F.setParUb(i, value);
+%             F.setParLb(i, value);
+%
 %             vect = zeros(1, F.nparam_);
 %             vect(i) = 1;
-%             F.addEqualityConstraints(vect(:)', bel);
+%             F.addEqualityConstraints(vect(:)', value);
             %%% New code
             F.fixed_(i) = true;
 
             % Set initial point
-            F.start_(i) = bel;
+            F.start_(i) = value;
         end
 
 
