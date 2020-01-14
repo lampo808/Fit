@@ -518,13 +518,16 @@ classdef Fit < handle
                 throw(exception);
             end
 
-            % Set lower bound, upper bound and constraint equal to <bel>
-            F.setParUb(i, bel);
-            F.setParLb(i, bel);
-
-            vect = zeros(1, F.nparam_);
-            vect(i) = 1;
-            F.addEqualityConstraints(vect(:)', bel);
+            %%% Old code
+%             % Set lower bound, upper bound and constraint equal to <bel>
+%             F.setParUb(i, bel);
+%             F.setParLb(i, bel);
+% 
+%             vect = zeros(1, F.nparam_);
+%             vect(i) = 1;
+%             F.addEqualityConstraints(vect(:)', bel);
+            %%% New code
+            F.fixed_(i) = true;
 
             % Set initial point
             F.start_(i) = bel;
@@ -649,9 +652,16 @@ classdef Fit < handle
                 [fitted, chi2, exitflag] = fminunc(minFun, ...
                         F.reduceFixedPars(F.start_), optimoptions('fminunc', F.opt_));
             else
-                [fitted, chi2, exitflag] = fmincon(minFun, ...
-                            F.reduceFixedPars(F.start_), F.A_, F.b_, ...
-                            F.Aeq_, F.beq_, F.lb_, F.ub_, [], F.opt_);
+                if any(F.fixed_)
+                    [fitted, chi2, exitflag] = fmincon(minFun, ...
+                                F.reduceFixedPars(F.start_), [], [], ...
+                                [], [], F.reduceFixedPars(F.lb_), ...
+                                F.reduceFixedPars(F.ub_), [], F.opt_);
+                else
+                    [fitted, chi2, exitflag] = fmincon(minFun, ...
+                                F.start_, F.A_, F.b_, ...
+                                F.Aeq_, F.beq_, F.lb_, F.ub_, [], F.opt_);
+                end
             end
 
             F.fitPar_ = F.expandFixedPars(fitted(:)');
@@ -920,6 +930,7 @@ classdef Fit < handle
             fullErrors = zeros(size(F.start_));
             fullErrors(~F.fixed_) = reducedErrors;
         end
+
     end  % Private methods
 
 end  % Class
