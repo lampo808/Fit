@@ -1,8 +1,10 @@
 classdef Fit < handle
     % Fit: generic class for constrained fitting using fmincon()
-    % v. 0.2.4
+    % v. 0.2.5
     %
     % Changelog
+    %   22/01/20 - 0.2.5: fixed errors on parameters when there is external
+    %       chi2 function
     %   14/01/20: changed the way of fixing parameters, now without using
     %       equality constraints
     %   13/01/20: fixed errors on fitted parameters, plus slight cleanup
@@ -40,6 +42,8 @@ classdef Fit < handle
     %  - [ ] enable the use of Trust-region-reflective by automatically
     %           supplying gradient
     %  - [ ] At the moment, fitEval is limited to the IRF points. Extend.
+    %  - [ ] Add parameters offset for big parameters with small variations
+    %  - [ ] Add parameters multiplier to equalize the size of the parameters
 
     properties (GetAccess = public, SetAccess = private)
         xData_       = [];  % Data
@@ -416,6 +420,12 @@ classdef Fit < handle
 
         function setEqualityConstraints(F, Aeq, beq)  % Set equality matrix and vector
             s = size(Aeq);
+            if s(2) ~= F.nparam_
+                msgID = 'FIT:setEqualityConstraints_AeqSize';
+                msg = 'The number of columns of Aeq is different from the number of parameters.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
             if s(1) ~= length(beq)
                 msgID = 'FIT:setEqualityConstraints_AeqSize';
                 msg = 'The number of rows of Aeq is different from the length of beq.';
@@ -423,12 +433,6 @@ classdef Fit < handle
 
                 throw(exception);
             end
-            if s(2) ~= F.nparam_
-                msgID = 'FIT:setEqualityConstraints_AeqSize';
-                msg = 'The number of columns of Aeq is different from the number of parameters.';
-                exception = MException(msgID, msg);
-
-                throw(exception);
             end
 
             F.Aeq_ = Aeq;
@@ -438,16 +442,16 @@ classdef Fit < handle
 
         function setInequalityConstraints(F, A, b)  % Set inequality matrix and vector
             s = size(A);
-            if s(1) ~= length(b)
+            if s(2) ~= F.nparam_
                 msgID = 'FIT:setInequalityConstraints_ASize';
-                msg = 'The number of rows of A is different from the length of b.';
+                msg = 'The number of columns of A is different from the number of parameters.';
                 exception = MException(msgID, msg);
 
                 throw(exception);
             end
-            if s(2) ~= F.nparam_
+            if s(1) ~= length(b)
                 msgID = 'FIT:setInequalityConstraints_ASize';
-                msg = 'The number of columns of A is different from the number of parameters.';
+                msg = 'The number of rows of A is different from the length of b.';
                 exception = MException(msgID, msg);
 
                 throw(exception);
@@ -460,16 +464,16 @@ classdef Fit < handle
 
         function addEqualityConstraints(F, Arows, bels)  % Add equality constraint
             s = size(Arows);
-            if s(1) ~= length(bels)
+            if s(2) ~= F.nparam_
                 msgID = 'FIT:addEqualityConstraints_ArowsSize';
-                msg = 'The number of rows of Arows is different from the length of bels.';
+                msg = 'The number of columns of Arows is different from the number of parameters.';
                 exception = MException(msgID, msg);
 
                 throw(exception);
             end
-            if s(2) ~= F.nparam_
+            if s(1) ~= length(bels)
                 msgID = 'FIT:addEqualityConstraints_ArowsSize';
-                msg = 'The number of columns of Arows is different from the number of parameters.';
+                msg = 'The number of rows of Arows is different from the length of bels.';
                 exception = MException(msgID, msg);
 
                 throw(exception);
@@ -482,16 +486,16 @@ classdef Fit < handle
 
         function addInequalityConstraints(F, Arows, bels)  % Add inequality constraint
             s = size(Arows);
-            if s(1) ~= length(bels)
+            if s(2) ~= F.nparam_
                 msgID = 'FIT:addInequalityConstraints_ArowsSize';
-                msg = 'The number of rows of Arows is different from the length of bels.';
+                msg = 'The number of columns of Arows is different from the number of parameters.';
                 exception = MException(msgID, msg);
 
                 throw(exception);
             end
-            if s(2) ~= F.nparam_
+            if s(1) ~= length(bels)
                 msgID = 'FIT:addInequalityConstraints_ArowsSize';
-                msg = 'The number of columns of Arows is different from the number of parameters.';
+                msg = 'The number of rows of Arows is different from the length of bels.';
                 exception = MException(msgID, msg);
 
                 throw(exception);
@@ -511,7 +515,7 @@ classdef Fit < handle
             %              otherwise the value identify the parameter's fixed value
                 for i=1:length(fixedValues)
                     if ~isnan(fixedValues(i))
-                        F_.fixParameter(i, fixedValues(i));
+                        F.fixParameter(i, fixedValues(i));
                     end
                 end
             end
@@ -688,8 +692,6 @@ classdef Fit < handle
                 % unknow, otherwise use the correct weights (= 1/sigma^2)
                 % and divide the estimated errors by sqrt(F.getChiSquare())
                 % (or use bootstrap)
-                % The estimate is correct only if the reduced chi square is
-                % around 1
                 hess = hessian(minFun, fitted);
 
                 % The factor 2 has been checked experimentally
@@ -735,8 +737,9 @@ classdef Fit < handle
                 reduced = 0;
             end
 
-            if reduced
-                chi2 = F.chi2_/(F.fitLength_ - F.nparam_ + sum(F.fixed_));
+            if (reduced && isempty(F.chi2Func_))
+                chi2 = F.chi2_/(F.fitLength_ - F.nparam_ + sum(F.fixed_) + ...
+                size(F.beq_, 2));
             else
                 chi2 = F.chi2_;
             end
@@ -889,7 +892,6 @@ classdef Fit < handle
 
 
         function chi2 = minFun(F, par)
-%             par = F.expandFixedPars(par);
             yFit = F.model_(F.xData_, par);
             res = F.residuals(yFit);
             chi2 = F.chisquare(res);
@@ -897,7 +899,6 @@ classdef Fit < handle
 
 
         function chi2 = minFunConv(F, par)
-%             par = F.expandFixedPars(par);
             yFit = F.model_(F.xIRF_, par(2:end));
             % Convolve fit points with IRF and normalize
             yFit_c = F.altConv(yFit, F.IRF_, par(1));
@@ -907,7 +908,6 @@ classdef Fit < handle
         end
 
         function chi2 = extChi2Fun(F, par)
-%             par = F.expandFixedPars(par);
             xDataMasked = F.xData_(F.dataMask_);
             chi2 = F.chi2Func_(xDataMasked, par);
         end

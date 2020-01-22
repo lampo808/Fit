@@ -1,6 +1,10 @@
-function [pars, fit_pars, fit_errs] = test_GFS_MultipleGaussians(lb, ub, fixed)
+function [pars, fit_pars, fit_errs] = test_GFS_MultipleGaussians(lb, ub, fixed, seed)
 
-rng(1)  % Set a seed for the random number generation (for reproducibility)
+if nargin < 4
+    rng(1)  % Set a seed for the random number generation (for reproducibility)
+else
+    rng(seed)
+end
 
 Gaussian = @(x, A, x0, s) A*exp(-(x-x0).^2/(2*s.^2));
 model = @(x, p) Gaussian(x, p(1), p(2), p(3)) + Gaussian(x, p(4), p(5), p(6)) + ...
@@ -36,20 +40,31 @@ gf.setModel(model, 9, [0 1 1 0 1 1 0 1 1])
 gf.setStart(pars.*(1+0.1*randn(size(pars))))
 
 if nargin > 0
-    gf.setLb(lb);
+    if not(isempty(lb))
+        gf.setLb(lb);
+    end
 end
 if nargin > 1
-    gf.setUb(ub);
+    if not(isempty(ub))
+        gf.setUb(ub);
+    end
 end
 if nargin > 2
-    gf.fixParameters(fixed);
+    if not(isempty(fixed))
+        gf.fixParameters(fixed);
+    end
 end
 
-gf.fit()
+gf.fit(1)
+
 fit_pars = gf.getFittedParameters();
 fit_errs = gf.getParamersErrors();
 
-% Evaluate and plot the data and fit - for debug
+if any(imag(fit_errs) ~= 0, 'all')
+    disp('Complex errors')
+end
+
+% % Evaluate and plot the data and fit - for debug
 % figure()
 % hold on
 % for i=1:size(pars, 1)

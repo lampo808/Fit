@@ -1,9 +1,18 @@
 classdef GlobalFitSimple < handle
     % GlobalFitSimple: class for global fitting of data with the same equation
     %  and single or global parameters
-    % v. 0.1.1
+    % v. 0.1.2
+
+    % TODO:
+    %  -[x] Evaluate chi square
+    %  -[x] Fix getChiSquare in class Fit if the model is not provided
+    %  -[x] Normalize the fit errors for the reduced chi square _here_
+    %  -[x] Take into account the constraints in the nDof calculation
+    %  -[ ] Update list of methods
+    %  -[ ] Test errors in GFS and Fit
 
     % Changelog:
+    %   22/01/20 - 0.1.2: fixed errors on parameters
     %   10/10/19 - 0.1.1: fixed constructor
     %   05/07/18 - 0.1: first version
 
@@ -189,7 +198,7 @@ classdef GlobalFitSimple < handle
 
                 throw(exception);
             end
-            ers = GFS.fitParError_;
+            ers = GFS.fitParError_/sqrt(GFS.getNDof());
         end
 
         function y = fitEval(GFS, x)
@@ -223,6 +232,27 @@ classdef GlobalFitSimple < handle
                 res{i} = GFS.yData_{i} - yFit{i};
             end
         end
+
+        function chi2 = getChiSquare(GFS, reduced)
+            if nargin < 2
+                reduced = 0;
+            end
+
+            if reduced
+                chi2 = GFS.F_.getChiSquare()/GFS.getNDof();
+            else
+                chi2 = GFS.F_.getChiSquare();
+            end
+
+        end
+
+        function nDof = getNDof(GFS)
+        % Number of DOF = n. data points - n. free paramters + n. equality constraints
+            nData = length(GFS.tocolumn(cell2mat(GFS.xData_)));
+            nDof = nData - GFS.nFlattenedParams_ + sum(GFS.F_.fixed_) + ...
+                size(GFS.F_.beq_, 2);
+            % - [ ] Consider also equality constraints
+        end
     end  % Methods
 
     methods (Access = private)
@@ -231,7 +261,7 @@ classdef GlobalFitSimple < handle
             chi2 = 0;
             GFS.unflattenedPars_ = GFS.unflattenParameters(pars);
 
-            l = GFS.nGlobalPars_+1;
+            l = GFS.nGlobalPars_ + 1;
             for i=1:GFS.nDataSets_
                 res = GFS.yData_{i} - GFS.model_(GFS.xData_{i}, GFS.unflattenedPars_(i,:));
                 chi2 = chi2 + sum(res.^2);  % TODO: add weights
