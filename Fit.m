@@ -688,12 +688,17 @@ classdef Fit < handle
                 % unknow, otherwise use the correct weights (= 1/sigma^2)
                 % and divide the estimated errors by sqrt(F.getChiSquare())
                 % (or use bootstrap)
-                % The estimate is correct only if the reduced chi square is
-                % around 1
                 hess = hessian(minFun, fitted);
-
-                % The factor 2 has been checked experimentally
-                err = sqrt(2*diag(inv(hess))*F.getChiSquare(1));
+                
+                if isempty(F.model_)  % Number of data points not available
+                    % In this case the error must be manually corrected for
+                    % the value of the reduced chi square
+                    err = sqrt(2*diag(inv(hess)));
+                else
+                    % The factor 2 has been checked experimentally
+                    err = sqrt(2*diag(inv(hess))*F.getChiSquare(1));
+                end
+ 
                 F.fitParError_ = F.expandFixedErrors(err(:)');
             end
 
@@ -884,7 +889,7 @@ classdef Fit < handle
 
 
         function chi2 = chisquare(F, res)
-            chi2 = sum(res.^2);
+            chi2 = sum(abs(res).^2);
         end
 
 

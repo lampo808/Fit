@@ -159,7 +159,8 @@ classdef GlobalFitSimple < handle
 
             if calculateErrors
                 ers = GFS.F_.getParametersErrors();
-                GFS.fitParError_ = GFS.unflattenParameters(ers);
+                GFS.fitParError_ = GFS.unflattenParameters(ers)*...
+                    sqrt(GFS.getChiSquare());
             end
         end
 
@@ -223,6 +224,20 @@ classdef GlobalFitSimple < handle
                 res{i} = GFS.yData_{i} - yFit{i};
             end
         end
+        
+        function chi2 = getChiSquare(GFS, reduced)
+             if nargin < 2
+                reduced = 0;
+             end
+            
+             if reduced
+                chi2 = GFS.chi2_/(length(GFS.xData_) - GFS.nFlattenedParams_ ...
+                    + sum(~isnan(GFS.f))); % TODO: fix here and check errors
+            else
+                chi2 = GFS.chi2_;
+            end
+        end
+        
     end  % Methods
 
     methods (Access = private)
