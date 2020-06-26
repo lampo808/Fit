@@ -1,8 +1,10 @@
 classdef Fit < handle
     % Fit: generic class for constrained fitting using fmincon()
-    % v. 0.2.4
+    % v. 0.2.5
     %
     % Changelog
+    %   26/06/20 - 0.2.5: initial step to enable Levenberg-Marquardt minimization:
+    %       minFunXXX return also the gradient. Bug fixes and Hessian saved
     %   14/01/20: changed the way of fixing parameters, now without using
     %       equality constraints
     %   13/01/20: fixed errors on fitted parameters, plus slight cleanup
@@ -69,6 +71,7 @@ classdef Fit < handle
         fixed_       = [];  % Vector flag of fixed parameters
 
         fitPar_      = [];  % Output fit parameters
+        hessian_     = [];  % Hessian of the chi2 after the fit
         fitParError_ = [];  % Errors on the fit parameters
         chi2_        = [];  % Chi square of the fit
 
@@ -511,7 +514,7 @@ classdef Fit < handle
             %              otherwise the value identify the parameter's fixed value
                 for i=1:length(fixedValues)
                     if ~isnan(fixedValues(i))
-                        F_.fixParameter(i, fixedValues(i));
+                        F.fixParameter(i, fixedValues(i));
                     end
                 end
             end
@@ -689,7 +692,7 @@ classdef Fit < handle
                 % and divide the estimated errors by sqrt(F.getChiSquare())
                 % (or use bootstrap)
                 hess = hessian(minFun, fitted);
-                
+
                 if isempty(F.model_)  % Number of data points not available
                     % In this case the error must be manually corrected for
                     % the value of the reduced chi square
@@ -698,38 +701,32 @@ classdef Fit < handle
                     % The factor 2 has been checked experimentally
                     err = sqrt(2*diag(inv(hess))*F.getChiSquare(1));
                 end
- 
+
+                F.hessian_ = hess;  % TODO: expand the hessian
                 F.fitParError_ = F.expandFixedErrors(err(:)');
             end
 
-            switch exitflag
-                case 1
-                    % Fit converged
-                case 0
-                    warning('Fit stopped: exceeded MaxIter or MaxFunEval.');
-                    if ~F.ignoreFitWarnings_
+            if ~F.ignoreFitWarnings_
+                switch exitflag
+                    case 1
+                        % Fit converged
+                    case 0
+                        warning('Fit stopped: exceeded MaxIter or MaxFunEval.');
                         F.fitPar_ = NaN(size(F.fitPar_));
-                    end
-                case -1
-                    warning('Fit stopped: stopped by output function or plot function');
-                    if ~F.ignoreFitWarnings_
-                    F.fitPar_ = NaN(size(F.fitPar_));
-                    end
-                case -2
-                    warning('Fit stopped: no feasible point found.');
-                    if ~F.ignoreFitWarnings_
+                    case -1
+                        warning('Fit stopped: stopped by output function or plot function');
                         F.fitPar_ = NaN(size(F.fitPar_));
-                    end
-                case 2
-%                     warning('Fit stopped: change in x better than TolX.');
-                case -3
-                    warning('Fit stopped: objective function less than ObjectiveLimit.');
-                    if ~F.ignoreFitWarnings_
-                        F.fitPar_ = NaN(size(F.fitPar_));
-                    end
-                otherwise
-                    warning(['Fit stopped: flag ', num2str(exitflag), ...
-                        ' (generally not a problem if the flag is positive)']);
+                    case -2
+                        warning('Fit stopped: no feasible point found.');
+                         F.fitPar_ = NaN(size(F.fitPar_));
+                    case 2
+                        warning('Fit stopped: change in x better than TolX.');
+                    case -3
+                        warning('Fit stopped: objective function less than ObjectiveLimit.');
+                    otherwise
+                        warning(['Fit stopped: flag ', num2str(exitflag), ...
+                            ' (generally not a problem if the flag is positive)']);
+                end
             end
             F.fitStatus_ = exitflag;
         end
@@ -892,17 +889,22 @@ classdef Fit < handle
             chi2 = sum(abs(res).^2);
         end
 
-
-        function chi2 = minFun(F, par)
-%             par = F.expandFixedPars(par);
+% TODO: check the use of xDataMask on all minFun variants
+        function [chi2] = minFun(F, par)
             yFit = F.model_(F.xData_, par);
             res = F.residuals(yFit);
             chi2 = F.chisquare(res);
         end
 
+        function [chi2, grad] = minFunGrad(F, par)
+            chi2 = F.minFun(par);
+
+            chi2f = @(p) F.chisquare(F.residuals(F.model_...
+                (F.xData_, F.expandFixedPars(p))));
+            grad = gradest(chi2f, F.reduceFixedPars(par));
+        end
 
         function chi2 = minFunConv(F, par)
-%             par = F.expandFixedPars(par);
             yFit = F.model_(F.xIRF_, par(2:end));
             % Convolve fit points with IRF and normalize
             yFit_c = F.altConv(yFit, F.IRF_, par(1));
@@ -911,10 +913,32 @@ classdef Fit < handle
             chi2 = F.chisquare(res);
         end
 
-        function chi2 = extChi2Fun(F, par)
-%             par = F.expandFixedPars(par);
+        function [chi2, grad] = minFunConvGrad(F, par)
+            chi2 = F.minFunConv(par);
+
+            grad = gradest(chi2f, F.reduceFixedPars(par));
+            function chi2 = chi2f(p)
+                par = F.expandFixedPars(p)
+                yFit = F.model_(F.xIRF_, par(2:end));
+                % Convolve fit points with IRF and normalize
+                yFit_c = F.altConv(yFit, F.IRF_, par(1));
+                yFit_c = yFit_c * sum(yFit)/sum(yFit_c);
+                res = F.residuals(yFit_c(1:F.fitLength_));
+                chi2 = F.chisquare(res);
+            end
+        end
+
+        function [chi2, grad] = extChi2Fun(F, par)
             xDataMasked = F.xData_(F.dataMask_);
             chi2 = F.chi2Func_(xDataMasked, par);
+        end
+
+        function [chi2, grad] = extChi2FunGrad(F, par)
+            xDataMasked = F.xData_(F.dataMask_);
+            chi2 = F.extChi2Fun(par);
+
+            chi2f = @(p) F.chi2Func_(xDataMasked, F.expandFixedPars(p));
+            grad = gradest(chi2f, F.reduceFixedPars(par));
         end
 
         function stop = updateHistory(F, x, optimValues, state)

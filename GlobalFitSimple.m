@@ -1,9 +1,11 @@
 classdef GlobalFitSimple < handle
     % GlobalFitSimple: class for global fitting of data with the same equation
     %  and single or global parameters
-    % v. 0.1.1
+    % v. 0.2.0
 
     % Changelog:
+    %   26/06/20 - 0.2.0: working well, limited functionality. Some functions
+    %       need to be called from the underlying Fit instance
     %   10/10/19 - 0.1.1: fixed constructor
     %   05/07/18 - 0.1: first version
 
@@ -35,17 +37,18 @@ classdef GlobalFitSimple < handle
                         % 100  --> fit running
                         % else --> exit flag of the completed fit
 
-    F_ = [];  % Instance of the Fit class used to do the fitting
-    chi2Fun_ = [];  % Chi square function
-    nDataSets_ = 0;  % Number of data sets to fit
-    parsAreGlobal_ = [];  % Which parameters are global
-    nFlattenedParams_ = 0;  % Number of parameters in the array passed to Fit
-    nGlobalPars_ = 0;  % Number of global parameters
-    iGlobalPars_ = [];  % Indices of the global parameters
-    nLocalPars_ = 0;  % Number of local parameters
-    iLocalPars_ = [];  % Indices of the local parameters
-    flattenedPars_ = [];  % Last flattened parameters
-    unflattenedPars_ = [];  % Last flattened parameters
+    F_                = [];  % Instance of the Fit class used to do the fitting
+    chi2Fun_          = [];  % Chi square function
+    nDataSets_        = 0;   % Number of data sets to fit
+    parsAreGlobal_    = [];  % Which parameters are global
+    nFlattenedParams_ = 0;   % Number of parameters in the array passed to Fit
+    nGlobalPars_      = 0;   % Number of global parameters
+    iGlobalPars_      = [];  % Indices of the global parameters
+    nLocalPars_       = 0;   % Number of local parameters
+    iLocalPars_       = [];  % Indices of the local parameters
+    flattenedPars_    = [];  % Last flattened parameters
+    unflattenedPars_  = [];  % Last unflattened parameters
+
     end  % Properties
 
     % List of methods:  (" " are optional parameters)
@@ -57,18 +60,27 @@ classdef GlobalFitSimple < handle
             GFS.F_ = Fit([1], [1]);
         end
 
-        function setData(GFS, xData, yData)
+        function setData(GFS, xData, yData, weights)
             % TODO: check that they are the same size etc.
-            % TODO: add support for weights
+            % TODO: check support for weights
+            if nargin < 4
+                weights = cell(size(xData));
+                for i=1:length(xData)
+                    weights{i} = ones(size(xData{i}));
+                end
+            end
             GFS.xData_ = xData;
             GFS.yData_ = yData;
+            GFS.weights_ = weights;
             GFS.nDataSets_ = length(xData);
 
             % Ensure the data sets are column vectors
             for i=1:GFS.nDataSets_
                 GFS.xData_{i} = GFS.xData_{i}(:);
                 GFS.yData_{i} = GFS.yData_{i}(:);
+                GFS.weights_{i} = GFS.weights_{i}(:);
             end
+
         end
 
         function setModel(GFS, model, nPars, parsAreGlobal)
@@ -147,20 +159,25 @@ classdef GlobalFitSimple < handle
             end
         end
 
-        function fit(GFS, calculateErrors)
+        function fit(GFS, calculateErrors, ignoreFitWarnings)
             if nargin < 2
                 calculateErrors = 1;
             end
-            GFS.F_.fit(calculateErrors);
+            if nargin < 3
+                ignoreFitWarnings = 0;
+            end
+            GFS.F_.fit(calculateErrors, ignoreFitWarnings);
 
             % Get fitted parameters and unflatten them
             pars = GFS.F_.getFittedParameters();
             GFS.fitPar_ = GFS.unflattenParameters(pars);
 
+            GFS.chi2_ = GFS.F_.getChiSquare();
+
             if calculateErrors
                 ers = GFS.F_.getParametersErrors();
                 GFS.fitParError_ = GFS.unflattenParameters(ers)*...
-                    sqrt(GFS.getChiSquare());
+                    sqrt(GFS.getChiSquare(1));
             end
         end
 
@@ -210,8 +227,8 @@ classdef GlobalFitSimple < handle
             end
         end
 
-        function res = getResiduals(GFS)
-            if isempty(GFS.fitPar_)
+        function res = getResiduals(GFS)  % TODO: symmetrize this function wrt Fit
+            if isempty(GFS.fitPar_)       %  (and maybe add a private function residuals())
                 msgID = 'GFS:getResiduals_fitNotPerformed';
                 msg = 'Before evaluating residuals the fit must be performed.';
                 exception = MException(msgID, msg);
@@ -221,35 +238,39 @@ classdef GlobalFitSimple < handle
 
             yFit = GFS.fitEval();
             for i=1:GFS.nDataSets_
-                res{i} = GFS.yData_{i} - yFit{i};
+                res{i} = (GFS.yData_{i} - yFit{i}) .* sqrt(GFS.weights_{i});
             end
         end
-        
+
         function chi2 = getChiSquare(GFS, reduced)
              if nargin < 2
                 reduced = 0;
              end
-            
+
              if reduced
-                chi2 = GFS.chi2_/(length(GFS.xData_) - GFS.nFlattenedParams_ ...
-                    + sum(~isnan(GFS.f))); % TODO: fix here and check errors
+                nPoints = 0;
+                for i=1:numel(GFS.xData_)
+                    nPoints = nPoints + numel(GFS.xData_{i});
+                end
+                chi2 = GFS.chi2_/(nPoints - GFS.nFlattenedParams_ ...
+                    + sum(~GFS.F_.fixed_));
             else
                 chi2 = GFS.chi2_;
             end
         end
-        
+
     end  % Methods
 
-    methods (Access = private)
+    methods (Access = public)
 
-        function chi2 = calculateChiSquare(GFS, unused_x, pars)
+        function chi2 = calculateChiSquare(GFS, ~, pars)
             chi2 = 0;
             GFS.unflattenedPars_ = GFS.unflattenParameters(pars);
 
             l = GFS.nGlobalPars_+1;
             for i=1:GFS.nDataSets_
                 res = GFS.yData_{i} - GFS.model_(GFS.xData_{i}, GFS.unflattenedPars_(i,:));
-                chi2 = chi2 + sum(res.^2);  % TODO: add weights
+                chi2 = chi2 + sum(res.^2 .* GFS.weights_{i});  % TODO: check weights
             end
         end
 
