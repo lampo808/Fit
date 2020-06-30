@@ -3,9 +3,18 @@ classdef GlobalFitSimple < handle
     %  and single or global parameters
     % v. 0.2.0
 
+        % TODO:
+    %  -[x] Evaluate chi square
+    %  -[x] Fix getChiSquare in class Fit if the model is not provided
+    %  -[x] Normalize the fit errors for the reduced chi square _here_
+    %  -[x] Take into account the constraints in the nDof calculation
+    %  -[ ] Update list of methods
+    %  -[x] Test errors in GFS and Fit
+
     % Changelog:
     %   26/06/20 - 0.2.0: working well, limited functionality. Some functions
     %       need to be called from the underlying Fit instance
+    %   22/01/20 - 0.1.2: fixed errors on parameters
     %   10/10/19 - 0.1.1: fixed constructor
     %   05/07/18 - 0.1: first version
 
@@ -267,7 +276,7 @@ classdef GlobalFitSimple < handle
             chi2 = 0;
             GFS.unflattenedPars_ = GFS.unflattenParameters(pars);
 
-            l = GFS.nGlobalPars_+1;
+            l = GFS.nGlobalPars_ + 1;
             for i=1:GFS.nDataSets_
                 res = GFS.yData_{i} - GFS.model_(GFS.xData_{i}, GFS.unflattenedPars_(i,:));
                 chi2 = chi2 + sum(res.^2 .* GFS.weights_{i});  % TODO: check weights

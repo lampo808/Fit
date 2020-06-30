@@ -30,6 +30,7 @@ classdef TestGFS < matlab.unittest.TestCase
             gf.setStart(pars)
             gf.fit()
             fit_pars = gf.getFittedParameters();
+            % Errors are not used, this is to test that no error is raised
             fit_errs = gf.getParamersErrors();
 
             for i=1:length(pars(:))
@@ -38,13 +39,12 @@ classdef TestGFS < matlab.unittest.TestCase
         end
 
         function GFSMultipleGaussiansFree(tc)
-            [pars, fit_pars, fit_errs] = test_GFS_MultipleGaussians();
+            [pars, fit_pars] = test_GFS_MultipleGaussians();
 
             for i=1:length(pars(:))
                 tc.assertEqual(pars(i), fit_pars(i), 'AbsTol', 0.1)
             end
         end
-
 
 %         pars =
 
@@ -71,13 +71,34 @@ classdef TestGFS < matlab.unittest.TestCase
                 ub(i,:) = [3, 3, 2, 1, 4, 3, 1, 7, 1];
             end
 
-            [pars, fit_pars, fit_errs] = test_GFS_MultipleGaussians(lb, ub);
+            [pars, fit_pars] = test_GFS_MultipleGaussians(lb, ub);
 
             for i=1:length(pars(:))
                 tc.assertEqual(pars(i), fit_pars(i), 'AbsTol', 0.1)
                 tc.assertGreaterThanOrEqual(pars(i), lb(i))
                 tc.assertLessThanOrEqual(pars(i), ub(i))
             end
+        end
+
+        function GFSMultipleGaussiansBoundErrors(tc)
+            % Check errors on parameters
+            for i=1:5
+                lb(i,:) = [0, 1, 0, 0, 2, 1, 0, 5, 0];
+                ub(i,:) = [3, 3, 2, 1, 4, 3, 1, 7, 1];
+            end
+
+            for i=1:50
+                [~, fit_pars(:,:,i), fit_errs(:,:,i)] = ...
+                    test_GFS_MultipleGaussians(lb, ub, [], i);
+            end
+
+            % Check that the errors from the fit agree with repeated
+            % simulations with a reasonably large range - there is a
+            % discrepancy on some parameters, hence the large range 0.3-3
+            tc.assertLessThan(abs(mean(fit_errs, 3) - std(fit_pars, [], 3))./...
+                mean(fit_errs, 3), 2);
+            tc.assertLessThan(std(fit_pars, [], 3)./mean(fit_errs, 3), 3)
+            tc.assertGreaterThan(std(fit_pars, [], 3)./mean(fit_errs, 3), 0.3)
         end
 
         function GFSMultipleGaussiansFixed(tc)
@@ -94,7 +115,7 @@ classdef TestGFS < matlab.unittest.TestCase
                 fixed(i,:) = [NaN, NaN, pars(i,3), NaN, NaN, NaN, NaN, NaN, NaN];
             end
 
-            [pars, fit_pars, fit_errs] = test_GFS_MultipleGaussians(lb, ub, fixed);
+            [pars, fit_pars] = test_GFS_MultipleGaussians(lb, ub, fixed);
 
             tc.assertTrue(all(all(fit_pars > lb)))
             tc.assertTrue(all(all(fit_pars < ub)))

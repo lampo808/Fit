@@ -87,7 +87,7 @@ classdef TestFit < matlab.unittest.TestCase
 
             tc.assertEqual(pars(2), 5, 'AbsTol', 1e-6)
         end
-        
+
         function GaussianRescale_1(tc)
             pars = [1e-3, 1e6, 0.1, 1e-10];
 
@@ -132,11 +132,51 @@ classdef TestFit < matlab.unittest.TestCase
 %             hold on
 %             plot(x, yFit2)
 %             hold off
-            
+
             for i=1:numel(fit_pars)
                 tc.assertEqual(fit_pars(i), fit_pars_2(i), 'AbsTol', 1e-6);
                 tc.assertEqual(fit_errs(i), fit_errs_2(i), 'AbsTol', 1e-6);
             end
+
+        % TODO:
+        % - [x] check errors on parameters
+        % - [x] check errors on parameters with fixed parameters
+        % - [x] check errors on parameters with equality constraints
+        % - [ ] same with global fit
+        function GaussianParametersErrors1(tc)
+            % Check errors on parameters
+            rng(1)
+
+            [pars, errs] = test_GaussianParametersErrors(100, 50, 1e-2);
+            tc.assertLessThan(abs(pars - [1 0 1 0]), 2e-3);
+            tc.assertLessThan(abs(diff(errs, 1)), 2e-3);
+        end
+
+        function GaussianParametersErrors2(tc)
+            % Check errors when there are fixed parameters
+            rng(1)
+
+            [pars, errs] = test_GaussianParametersErrors(10, 500, 1e-2, ...
+                [1, NaN, 1, 0]);
+            tc.assertLessThan(abs(pars - [1 0 1 0]), 1e-3);
+            tc.assertLessThan(abs(diff(errs, 1)), 1e-3);
+
+            % Check errors when there are equality constraints
+            rng(1)
+
+            % In this case, use constraints to fix parameters
+            Aeq = [1 0 0 0; 0 0 1 0; 0 0 0 1];
+            beq = [1, 1, 0];
+
+            % Note that parameters errors are evaluated on the uncostrained
+            % model, so are generally wrong when there are constraints (but
+            % not when fixing parameters)
+            [pars, errs] = test_GaussianParametersErrors(10, 500, 1e-2, ...
+                [NaN, NaN, NaN, NaN], Aeq, beq);
+
+            [~, errs_free] = test_GaussianParametersErrors(10, 500, 1e-2);
+            tc.assertLessThan(abs(pars - [1 0 1 0]), 1e-3);
+            tc.assertLessThan(abs(errs(1,:) - errs_free(1,:)), 3e-3);
         end
 
     end  % Methods
