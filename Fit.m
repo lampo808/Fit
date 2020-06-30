@@ -717,18 +717,22 @@ classdef Fit < handle
                         optimoptions('fminunc', F.opt_));
             else
                 if any(F.fixed_)
+                    %%%% At the moment, fixing parameters is incompatible with
+                    % linear constraints/inequalities
                     [fitted, chi2, exitflag] = fmincon(minFun, ...
                                 F.reduceFixedPars(F.start_), [], [], ...
                                 [], [], F.reduceFixedPars(F.lb_), ...
                                 F.reduceFixedPars(F.ub_), [], F.opt_);
                 else
-                    % At the moment, fixing parameters is incompatible with
+                    %%%% At the moment, fixing parameters is incompatible with
                     % linear constraints/inequalities
+                    %%% TODO: rescaling not working with linear
+                    % constraints/inequalities
                     [fitted, chi2, exitflag] = fmincon(minFun, ...
-                                F.rescalePars(F.start_), ...
-                                F.A_, F.b_, ...   %%% TODO: rescale A and b
+                                F.start_, ...
+                                F.A_, F.b_, ...
                                 F.Aeq_,F.beq_, ...
-                                F.rescalePars(F.lb_), F.rescalePars(F.ub_), [], F.opt_);
+                                F.lb_, F.ub_, [], F.opt_);
                 end
             end
 

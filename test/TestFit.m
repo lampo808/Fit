@@ -137,6 +137,7 @@ classdef TestFit < matlab.unittest.TestCase
                 tc.assertEqual(fit_pars(i), fit_pars_2(i), 'AbsTol', 1e-6);
                 tc.assertEqual(fit_errs(i), fit_errs_2(i), 'AbsTol', 1e-6);
             end
+        end
 
         % TODO:
         % - [x] check errors on parameters
