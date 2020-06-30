@@ -84,10 +84,10 @@ classdef TestGFS < matlab.unittest.TestCase
             % Fix some parameters to the start value and check that
             %  1. the fit converges
             %  2. the fixed parameters are actually fixed
-            
+
             % Get the initial parameters
             pars = test_GFS_MultipleGaussians();
-            
+
             for i=1:5
                 lb(i,:) = [i/2-1, 1, 0, 0, 2, 1, 0, 5, 0];
                 ub(i,:) = [3, 3, 2, 1, 4, 3, 1, 7, 1];
@@ -95,7 +95,7 @@ classdef TestGFS < matlab.unittest.TestCase
             end
 
             [pars, fit_pars, fit_errs] = test_GFS_MultipleGaussians(lb, ub, fixed);
-            
+
             tc.assertTrue(all(all(fit_pars > lb)))
             tc.assertTrue(all(all(fit_pars < ub)))
 

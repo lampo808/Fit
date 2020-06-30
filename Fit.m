@@ -1,8 +1,10 @@
 classdef Fit < handle
     % Fit: generic class for constrained fitting using fmincon()
-    % v. 0.2.5
+    % v. 0.3.0
     %
     % Changelog
+    %   30/06/20 - 0.3.0: added offset and scaling of parameters through
+    %       additional parameters passed to setStart()
     %   26/06/20 - 0.2.5: initial step to enable Levenberg-Marquardt minimization:
     %       minFunXXX return also the gradient. Bug fixes and Hessian saved
     %   14/01/20: changed the way of fixing parameters, now without using
@@ -22,6 +24,9 @@ classdef Fit < handle
     %
 
     %TODO:
+    %  - [ ] expand hessian and covariance matrix
+    %  - [ ] offset and scaling does not work with equality/inequality
+    %  constraints
     %  - [ ] thorough test suite
     %      - [ ] test that the residuals are calculated the right way
     %      - [ ] test that the chi square is right even before the fit
@@ -62,6 +67,8 @@ classdef Fit < handle
         chi2Func_    = [];  % User-defined chi-square function
 
         start_       = [];  % Start point
+        offset_      = [];  % Offset of the parameters
+        scaling_     = [];  % Scaling of the parameters
         ub_          = [];  % Upper bound
         lb_          = [];  % Lower bound
         Aeq_         = [];  % Equality matrix
@@ -72,6 +79,7 @@ classdef Fit < handle
 
         fitPar_      = [];  % Output fit parameters
         hessian_     = [];  % Hessian of the chi2 after the fit
+        covmat_      = [];  % Covariance matrix
         fitParError_ = [];  % Errors on the fit parameters
         chi2_        = [];  % Chi square of the fit
 
@@ -373,7 +381,34 @@ classdef Fit < handle
         end
 
 
-        function setStart(F, sp)  % Set start point
+        function setStart(F, sp, offset, scaling)  % Set start point
+            if (nargin < 3) || isempty(offset)
+                offset = zeros(size(sp));
+            end
+            if (nargin < 4) || isempty(scaling)
+                scaling = ones(size(sp));
+            end
+
+            if length(offset) ~= F.nparam_
+                msgID = 'FIT:setStart_numberParams';
+                msg = 'The number of elements of offset vector is different from the number of parameters.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            else
+                F.offset_ = offset(:)';
+            end
+
+            if length(scaling) ~= F.nparam_
+                msgID = 'FIT:setStart_numberParams';
+                msg = 'The number of elements of scaling vector is different from the number of parameters.';
+                exception = MException(msgID, msg);
+
+                throw(exception);
+            else
+                F.scaling_ = scaling(:)';
+            end
+
             if length(sp) ~= F.nparam_
                 msgID = 'FIT:setStart_numberParams';
                 msg = 'The number of elements of startpoint vector is different from the number of parameters.';
@@ -390,6 +425,13 @@ classdef Fit < handle
             sp = F.start_;
         end
 
+        function offset = getOffset(F)
+            offset = F.offset_;
+        end
+
+        function scaling = getScaling(F)
+            scaling = F.scaling_;
+        end
 
         function setUb(F, ub)  % Set upper bounds
             if length(ub) ~= F.nparam_
@@ -667,7 +709,8 @@ classdef Fit < handle
             if (isempty(F.A_) && isempty(F.b_) && isempty(F.Aeq_) && ....
                 isempty(F.beq_) && isempty(F.lb_) && isempty(F.ub_))
                 [fitted, chi2, exitflag] = fminunc(minFun, ...
-                        F.reduceFixedPars(F.start_), optimoptions('fminunc', F.opt_));
+                        F.reduceFixedPars(F.start_), ...
+                        optimoptions('fminunc', F.opt_));
             else
                 if any(F.fixed_)
                     [fitted, chi2, exitflag] = fmincon(minFun, ...
@@ -675,9 +718,13 @@ classdef Fit < handle
                                 [], [], F.reduceFixedPars(F.lb_), ...
                                 F.reduceFixedPars(F.ub_), [], F.opt_);
                 else
+                    % At the moment, fixing parameters is incompatible with
+                    % linear constraints/inequalities
                     [fitted, chi2, exitflag] = fmincon(minFun, ...
-                                F.start_, F.A_, F.b_, ...
-                                F.Aeq_, F.beq_, F.lb_, F.ub_, [], F.opt_);
+                                F.rescalePars(F.start_), ...
+                                F.A_, F.b_, ...   %%% TODO: rescale A and b
+                                F.Aeq_,F.beq_, ...
+                                F.rescalePars(F.lb_), F.rescalePars(F.ub_), [], F.opt_);
                 end
             end
 
@@ -692,6 +739,11 @@ classdef Fit < handle
                 % and divide the estimated errors by sqrt(F.getChiSquare())
                 % (or use bootstrap)
                 hess = hessian(minFun, fitted);
+%                 for i=1:size(hess,1)  %%% TODO: expand hessian first
+%                     for j=1:size(hess,2)
+%                         hess(i,j) = hess(i,j)/(F.scaling_(i) * F.scaling_(j));
+%                     end
+%                 end
 
                 if isempty(F.model_)  % Number of data points not available
                     % In this case the error must be manually corrected for
@@ -702,7 +754,8 @@ classdef Fit < handle
                     err = sqrt(2*diag(inv(hess))*F.getChiSquare(1));
                 end
 
-                F.hessian_ = hess;  % TODO: expand the hessian
+                F.covmat_ = inv(hess);
+                F.hessian_ = hess;  % TODO: expand the hessian and covmat
                 F.fitParError_ = F.expandFixedErrors(err(:)');
             end
 
@@ -918,7 +971,7 @@ classdef Fit < handle
 
             grad = gradest(chi2f, F.reduceFixedPars(par));
             function chi2 = chi2f(p)
-                par = F.expandFixedPars(p)
+                par = F.expandFixedPars(p);
                 yFit = F.model_(F.xIRF_, par(2:end));
                 % Convolve fit points with IRF and normalize
                 yFit_c = F.altConv(yFit, F.IRF_, par(1));
@@ -961,17 +1014,28 @@ classdef Fit < handle
         end
 
         function reducedPars = reduceFixedPars(F, fullPars)
+            fullPars = F.rescalePars(fullPars);
             reducedPars = fullPars(~F.fixed_);
         end
 
         function fullPars = expandFixedPars(F, reducedPars)
-            fullPars = F.start_;
+            fullPars = F.rescalePars(F.start_);
             fullPars(~F.fixed_) = reducedPars;
+            fullPars = F.unscalePars(fullPars);
+        end
+
+        function rescaledPars = rescalePars(F, unscaledPars)
+            rescaledPars = (unscaledPars - F.offset_) ./ F.scaling_;
+        end
+
+        function unscaledPars = unscalePars(F, rescaledPars)
+            unscaledPars = rescaledPars .* F.scaling_ + F.offset_;
         end
 
         function fullErrors = expandFixedErrors(F, reducedErrors)
             fullErrors = zeros(size(F.start_));
             fullErrors(~F.fixed_) = reducedErrors;
+            fullErrors = fullErrors .* F.scaling_;
         end
 
     end  % Private methods
