@@ -36,7 +36,7 @@ fit.setUb([1e6, 500, 10000, 1500, 5000, 5000, 1e2]);    % Upper bounds
 fit.fit();  % Perform the fit
 
 fitParams = fit.getFittedParameters();  % Get the fitted parameters
-chi2 = fit.getChiSquare()/numel(time);  %  and calculate the reduced chi square
+chi2 = fit.getChiSquare(1);  %  and calculate the reduced chi square
 % Notice that the fitted decay amplitudes are 
 
 disp('-----------------')
