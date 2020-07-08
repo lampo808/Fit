@@ -1,8 +1,10 @@
 classdef Fit < handle
     % Fit: generic class for constrained fitting using fmincon()
-    % v. 0.3.0
+    % v. 0.3.1
     %
     % Changelog
+    %   08/07/20 - 0.3.1: calculate and return expanded Hessian, covariance
+    %       and correlation matrices
     %   30/06/20 - 0.3.0: added offset and scaling of parameters through
     %       additional parameters passed to setStart()
     %   26/06/20 - 0.2.6: initial step to enable Levenberg-Marquardt minimization:
@@ -26,7 +28,7 @@ classdef Fit < handle
     %
 
     %TODO:
-    %  - [ ] expand hessian and covariance matrix
+    %  - [x] expand hessian and covariance matrix
     %  - [ ] offset and scaling does not work with equality/inequality
     %  constraints
     %  - [ ] thorough test suite
