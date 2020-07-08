@@ -84,6 +84,7 @@ classdef Fit < handle
         fitPar_      = [];  % Output fit parameters
         hessian_     = [];  % Hessian of the chi2 after the fit
         covmat_      = [];  % Covariance matrix
+        corrmat_     = [];  % Correlation matrix
         fitParError_ = [];  % Errors on the fit parameters
         chi2_        = [];  % Chi square of the fit
 
@@ -747,23 +748,28 @@ classdef Fit < handle
                 % and divide the estimated errors by sqrt(F.getChiSquare())
                 % (or use bootstrap)
                 hess = hessian(minFun, fitted);
-%                 for i=1:size(hess,1)  %%% TODO: expand hessian first
-%                     for j=1:size(hess,2)
-%                         hess(i,j) = hess(i,j)/(F.scaling_(i) * F.scaling_(j));
-%                     end
-%                 end
 
                 if isempty(F.model_)  % Number of data points not available
                     % In this case the error must be manually corrected for
                     % the value of the reduced chi square
                     err = sqrt(2*diag(inv(hess)));
+                    F.covmat_ = F.expandFixedHessian(2*inv(hess));
                 else
                     % The factor 2 has been checked experimentally
                     err = sqrt(2*diag(inv(hess))*F.getChiSquare(1));
+                    F.covmat_ = F.expandFixedHessian(2*inv(hess)*F.getChiSquare(1));
                 end
 
-                F.covmat_ = inv(hess);
-                F.hessian_ = hess;  % TODO: expand the hessian and covmat
+                F.hessian_ = F.expandFixedHessian(hess);
+                F.corrmat_ =  (F.covmat_./sqrt(diag(F.covmat_)))./sqrt(diag(F.covmat_)');
+                
+                for i=1:size(F.hessian_,1)
+                    for j=1:size(F.hessian_,2)
+                        F.hessian_(i,j) = F.hessian_(i,j)/(F.scaling_(i) * F.scaling_(j));
+                        F.covmat_(i,j) = F.covmat_(i,j) * F.scaling_(i) * F.scaling_(j);
+                    end
+                end
+                
                 F.fitParError_ = F.expandFixedErrors(err(:)');
             end
 
@@ -890,7 +896,18 @@ classdef Fit < handle
                 throw(exception);
             end
         end
-
+        
+        function hessian = getHessian(F)
+            hessian = F.hessian_;
+        end
+        
+        function cov = getCovarianceMatrix(F)
+            cov = F.covmat_;
+        end
+        
+        function corr = getCorrelationMatrix(F)
+            corr = F.corrmat_;
+        end
 
         function [y, xIRF] = fitEval(F, x)
             if isempty(F.fitPar_)
@@ -1046,6 +1063,11 @@ classdef Fit < handle
             fullErrors = zeros(size(F.start_));
             fullErrors(~F.fixed_) = reducedErrors;
             fullErrors = fullErrors .* F.scaling_;
+        end
+        
+        function fullHessian = expandFixedHessian(F, reducedHessian)
+            fullHessian = zeros(F.nparam_, F.nparam_);
+            fullHessian(~F.fixed_, ~F.fixed_) = reducedHessian;
         end
 
     end  % Private methods
