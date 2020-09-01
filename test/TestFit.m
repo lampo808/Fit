@@ -144,7 +144,7 @@ classdef TestFit < matlab.unittest.TestCase
         % - [x] check errors on parameters with fixed parameters
         % - [x] check errors on parameters with equality constraints
         % - [ ] same with global fit
-        function GaussianParametersErrors1(tc)
+        function GaussianParametersErrors_1(tc)
             % Check errors on parameters
             rng(1)
 
@@ -153,7 +153,7 @@ classdef TestFit < matlab.unittest.TestCase
             tc.assertLessThan(abs(diff(errs, 1)), 2e-3);
         end
 
-        function GaussianParametersErrors2(tc)
+        function GaussianParametersErrors_2(tc)
             % Check errors when there are fixed parameters
             rng(1)
 

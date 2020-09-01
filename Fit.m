@@ -110,7 +110,7 @@ classdef Fit < handle
     %  - setIRF(irf)                           --> set IRF
     %  - setModel(@model, npars, "reset")      --> set fit model
     %  - setChiSquare(@chi2, npars, "reset")   --> set chi-square function
-    %  - setStart(sp)                          --> set start point
+    %  - setStart(sp, offset, scaling)         --> set start point, offset, scaling
     %  - getStart()                            --> get start point
     %  - setUb(ub)                             --> set upper bounds
     %  - setLb(lb)                             --> set lower bounds

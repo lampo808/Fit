@@ -71,7 +71,6 @@ classdef GlobalFitSimple < handle
 
         function setData(GFS, xData, yData, weights)
             % TODO: check that they are the same size etc.
-            % TODO: check support for weights
             if nargin < 4
                 weights = cell(size(xData));
                 for i=1:length(xData)
@@ -108,7 +107,7 @@ classdef GlobalFitSimple < handle
             GFS.F_.setChiSquare(GFS.chi2Fun_, GFS.nFlattenedParams_);
         end
 
-        function setStart(GFS, start)
+        function setStart(GFS, start, offset, scaling)
             s = size(start);
             if (s(1) ~= GFS.nDataSets_)
                 msgID = 'GFS:setStart_wrongArraySize';
@@ -124,12 +123,19 @@ classdef GlobalFitSimple < handle
 
                 throw(exception);
             end
+            if nargin < 3
+                offset = zeros(s);
+            end
+            if nargin < 4
+                scaling = ones(s);
+            end
 
             GFS.start_ = start;
             GFS.unflattenedPars_ = start;
             GFS.flattenedPars_ = GFS.flattenParameters(start);
 
-            GFS.F_.setStart(GFS.flattenedPars_);
+            GFS.F_.setStart(GFS.flattenedPars_, GFS.flattenParameters(offset), ...
+                GFS.flattenParameters(scaling));
         end
 
         function setUb(GFS, ub)  % Set upper bounds

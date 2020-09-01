@@ -127,6 +127,28 @@ classdef TestGFS < matlab.unittest.TestCase
                 end
             end
         end
+        
+        function GFSMultipleGaussiansScaling(tc)
+            % Generate badly scaled data, and check that with offset and
+            % scaling added the fit converges (it wouldn't converge
+            % normally)
+
+            for i=1:5
+                offset(i,:) = [0, 2e6, 0, ...
+                    0, 2e6, 0, ...
+                    0, 2e6, 0];
+                scaling(i,:) = [1, 1, 1e-10, ...
+                    1, 1, 1e-10, ...
+                    1, 1, 1e-10];
+            end
+
+            [pars, fit_pars] = test_GFS_MultipleGaussiansRescale(...
+                offset, scaling);
+
+            for i=1:numel(pars)
+                tc.assertEqual(pars(i), fit_pars(i), 'AbsTol', 0.1)
+            end
+        end
 
     end  % Methods
 end
